@@ -18,27 +18,39 @@ import (
 )
 
 func init() {
-	syscall.Mkfifo("/tmp/fifo1", 0666)
-	syscall.Mkfifo("/tmp/fifo2", 0666)
+	fiforoot := "/tmp/"
+	exec.Command("/bin/sh", "-c", "rm -f "+fiforoot+"fifo*").Run()
+	syscall.Mkfifo(fiforoot+"fifo1", 0666)
+	syscall.Mkfifo(fiforoot+"fifo2", 0666)
+	_, err := os.Stat(fiforoot + "fifo1")
+	if err != nil {
+		log.Fatal("hlsplay-init() fifo1")
+	}
+	_, err = os.Stat(fiforoot + "fifo2")
+	if err != nil {
+		log.Fatal("hlsplay-init() fifo2")
+	}
 }
 
 type HLSPlay struct {
-	cmdomx      string
-	exe         *cmdline.Exec
-	exe2        *cmdline.Exec
-	mediawriter *bufio.Writer     // por aqui puedo enviar caracteres al omxplayer
-	settings    map[string]string // read-only map
-	downloaddir string            // directorio RAMdisk donde se guardan los ficheros bajados del server y listos para reproducir
-	m3u8        string
-	playing     bool       // omxplayer esta reproduciendo
-	restamping  bool       // ffmpeg esta reestampando
-	downloading bool       // esta bajando segmentos
-	running     bool       // proceso completo funcionando
-	semaforo    string     // R(red), Y(yellow), G(green) download speed
-	volume      int        // dB
-	mu_seg      sync.Mutex // Mutex para las variables internas del objeto HLSPlay
-	numsegs     int
-	mu_play     []sync.Mutex // Mutex para la escritura/lectura de segmentos *.ts cíclicos
+	cmdomx        string
+	exe           *cmdline.Exec
+	exe2          *cmdline.Exec
+	mediawriter   *bufio.Writer     // por aqui puedo enviar caracteres al omxplayer
+	settings      map[string]string // read-only map
+	downloaddir   string            // directorio RAMdisk donde se guardan los ficheros bajados del server y listos para reproducir
+	m3u8          string
+	playing       bool       // omxplayer esta reproduciendo
+	restamping    bool       // ffmpeg esta reestampando
+	downloading   bool       // esta bajando segmentos
+	running       bool       // proceso completo funcionando
+	semaforo      string     // R(red), Y(yellow), G(green) download speed
+	volume        int        // dB
+	mu_seg        sync.Mutex // Mutex para las variables internas del objeto HLSPlay
+	numsegs       int
+	lastTargetdur float64
+	lastMediaseq  int64
+	mu_play       []sync.Mutex // Mutex para la escritura/lectura de segmentos *.ts cíclicos
 }
 
 func HLSPlayer(m3u8, downloaddir string, settings map[string]string) *HLSPlay {
@@ -53,6 +65,8 @@ func HLSPlayer(m3u8, downloaddir string, settings map[string]string) *HLSPlay {
 	hls.downloading = false
 	hls.running = false
 	hls.semaforo = "G" // comenzamos en verde
+	hls.lastTargetdur = 0.0
+	hls.lastMediaseq = 0
 	// calculamos los segmentos máximos que caben
 	ramdisk, ok := hls.settings["ramdisk"] // ramdisk in MBs
 	if !ok {
