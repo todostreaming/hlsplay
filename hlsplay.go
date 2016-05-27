@@ -30,13 +30,14 @@ type HLSPlay struct {
 	settings    map[string]string // read-only map
 	downloaddir string            // directorio RAMdisk donde se guardan los ficheros bajados del server y listos para reproducir
 	m3u8        string
-	playing     bool         // omxplayer esta reproduciendo
-	restamping  bool         // ffmpeg esta reestampando
-	downloading bool         // esta bajando segmentos
-	running     bool         // proceso completo funcionando
-	semaforo    string       // R(red), Y(yellow), G(green) download speed
-	volume      int          // dB
-	mu_seg      sync.Mutex   // Mutex para las variables internas del objeto HLSPlay
+	playing     bool       // omxplayer esta reproduciendo
+	restamping  bool       // ffmpeg esta reestampando
+	downloading bool       // esta bajando segmentos
+	running     bool       // proceso completo funcionando
+	semaforo    string     // R(red), Y(yellow), G(green) download speed
+	volume      int        // dB
+	mu_seg      sync.Mutex // Mutex para las variables internas del objeto HLSPlay
+	numsegs     int
 	mu_play     []sync.Mutex // Mutex para la escritura/lectura de segmentos *.ts cíclicos
 }
 
@@ -51,8 +52,15 @@ func HLSPlayer(m3u8, downloaddir string, settings map[string]string) *HLSPlay {
 	hls.restamping = false
 	hls.downloading = false
 	hls.running = false
-	hls.semaforo = "G"                   // comenzamos en verde
-	hls.mu_play = make([]sync.Mutex, 30) // 30 segmentos ciclados (??? calcular antes ???)
+	hls.semaforo = "G" // comenzamos en verde
+	// calculamos los segmentos máximos que caben
+	ramdisk, ok := hls.settings["ramdisk"] // ramdisk in MBs
+	if !ok {
+		ramdisk = "128" // 128 MBs by default
+	}
+	numsegs := (2 * toInt(ramdisk) / 15) - 4
+	hls.numsegs = int(numsegs)
+	hls.mu_play = make([]sync.Mutex, hls.numsegs) // segmentos de maximo 12 segundos a 5 Mbps
 
 	return hls
 }
@@ -67,9 +75,8 @@ func (h *HLSPlay) Run() error {
 		return fmt.Errorf("hlsplay: ALREADY_RUNNING_ERROR")
 	}
 	// borrar la base de datos de RAM y los ficheros *.ts
-	exec.Command("/bin/sh", "-c", "rm -f "+h.downloaddir+"*.ts").Run()   // equivale a rm -f /var/segments/*.ts
-	exec.Command("/bin/sh", "-c", "rm -f "+h.downloaddir+"*.m3u8").Run() // equivale a rm -f /var/segments/*.m3u8
-	h.running = true                                                     // comienza a correr
+	exec.Command("/bin/sh", "-c", "rm -f "+h.downloaddir+"*.ts").Run() // equivale a rm -f /var/segments/*.ts
+	h.running = true                                                   // comienza a correr
 	h.mu_seg.Unlock()
 
 	go h.command1(ch)
