@@ -18,7 +18,7 @@ import (
 	"time"
 )
 
-var fiforoot = "/tmp/"
+const fiforoot = "/tmp/"
 
 func init() {
 	exec.Command("/bin/sh", "-c", "rm -f "+fiforoot+"fifo*").Run()
