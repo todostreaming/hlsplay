@@ -33,6 +33,15 @@ func init() {
 	}
 }
 
+type Status struct {
+	Playing bool // omxplayer esta reproduciendo
+	Running bool // proceso completo funcionando
+	Volume  int  // dB
+	Numsegs int
+	Kbps    int    // download kbps speed
+	OMXStat string // log del omxplayer
+}
+
 type Segmento struct {
 	segname string
 	segdur  float64
@@ -50,7 +59,6 @@ type HLSPlay struct {
 	restamping    bool       // ffmpeg esta reestampando
 	downloading   bool       // esta bajando segmentos
 	running       bool       // proceso completo funcionando
-	semaforo      string     // R(red), Y(yellow), G(green) download speed
 	volume        int        // dB
 	mu_seg        sync.Mutex // Mutex para las variables internas del objeto HLSPlay
 	numsegs       int
@@ -58,6 +66,8 @@ type HLSPlay struct {
 	lastMediaseq  int64
 	lastIndex     int                // index del segmento donde toca copiar download.ts  entre 0 y numsegs-1
 	lastPlay      int                // index del segmento que se envió al secuenciador desde el director
+	lastkbps      int                // download kbps speed
+	omxstat       string             // log del omxplayer
 	anotados      map[string]float64 // segmentos anotados en el FIFO
 	m3u8pls       *m3u8pls.M3U8pls   // parser M3U8
 	cola          *fifo.Queue        // cola con los segments/dur para bajar
@@ -75,14 +85,15 @@ func HLSPlayer(m3u8, downloaddir string, settings map[string]string) *HLSPlay {
 	hls.restamping = false
 	hls.downloading = false
 	hls.running = false
-	hls.semaforo = "G" // comenzamos en verde
 	hls.lastTargetdur = 0.0
 	hls.lastMediaseq = 0
 	hls.lastIndex = 0
 	hls.lastPlay = 0
+	hls.lastkbps = 0
 	hls.anotados = make(map[string]float64)
 	hls.m3u8pls = m3u8pls.M3U8playlist(hls.m3u8)
 	hls.cola = fifo.NewQueue()
+	hls.omxstat = ""
 	// calculamos los segmentos máximos que caben
 	ramdisk, ok := hls.settings["ramdisk"] // ramdisk in MBs
 	if !ok {
@@ -127,6 +138,18 @@ func (h *HLSPlay) Stop() error {
 		return fmt.Errorf("hlsplay: ALREADY_STOPPED_ERROR")
 	}
 	h.running = false
+	h.playing = false
+	h.restamping = false
+	h.downloading = false
+	h.running = false
+	h.lastTargetdur = 0.0
+	h.lastMediaseq = 0
+	h.lastIndex = 0
+	h.lastPlay = 0
+	h.lastkbps = 0
+	h.anotados = map[string]float64{}
+	h.cola = fifo.NewQueue()
+	h.omxstat = ""
 	killall("omxplayer.bin")
 	h.exe.Stop()
 	err = h.exe2.Stop()
@@ -137,6 +160,23 @@ func (h *HLSPlay) Stop() error {
 	return err
 }
 
+// you dont need to call this func less than secondly
+func (h *HLSPlay) Status() *Status {
+	var st Status
+
+	h.mu_seg.Lock()
+	defer h.mu_seg.Unlock()
+
+	st.Playing = h.playing
+	st.Running = h.running
+	st.Volume = h.volume
+	st.Numsegs = h.numsegs
+	st.Kbps = h.lastkbps
+	st.OMXStat = h.omxstat
+
+	return &st
+}
+
 func (h *HLSPlay) m3u8parser() {
 	for {
 		h.m3u8pls.Parse()  // bajamos y parseamos la url m3u8 HLS a reproducir
@@ -145,6 +185,10 @@ func (h *HLSPlay) m3u8parser() {
 			continue
 		}
 		h.mu_seg.Lock()
+		if !h.running {
+			h.mu_seg.Unlock()
+			break
+		}
 		if h.m3u8pls.Mediaseq == h.lastMediaseq { // no ha cambiado el m3u8 aún
 			h.mu_seg.Unlock()
 			time.Sleep(time.Duration(h.m3u8pls.Targetdur/2.0) * time.Second)
@@ -172,17 +216,28 @@ func (h *HLSPlay) m3u8parser() {
 func (h *HLSPlay) downloader() {
 	started := true
 	for {
+		os.Remove(h.downloaddir + "download.ts")
+		syscall.Sync()
+		h.mu_seg.Lock()
+		if !h.running {
+			h.mu_seg.Unlock()
+			break
+		}
+		h.mu_seg.Unlock()
 		if h.cola.Len() < 1 {
 			time.Sleep(1 * time.Second)
 			continue
 		}
 		item := h.cola.Next()
 		p := item.(*Segmento) // p.segname y p.segdur
-		ok := h.download(p.segname, p.segdur)
+		kbps, ok := download(h.downloaddir+"download.ts", p.segname, p.segdur)
 		if !ok {
 			continue
 		}
 
+		h.mu_seg.Lock()
+		h.lastkbps = kbps
+		h.mu_seg.Unlock()
 		if started {
 			started = false
 			// copiar numsegs veces el segmento download.ts
@@ -208,16 +263,79 @@ func (h *HLSPlay) downloader() {
 			}
 			h.mu_seg.Unlock()
 		}
-		syscall.Sync()
 		runtime.Gosched()
 	}
 }
 
-// baja un segmento al fichero download.ts y lo reintenta 3 veces con un timeout 2 * segdur
-func (h *HLSPlay) download(segname string, segdur float64) bool {
-	var ok bool
+// baja un segmento al fichero download y lo reintenta 3 veces con un timeout 2 * segdur
+// download es la direccion absoluta del fichero donde bajarlo
+// segname es la URL completa del fichero a bajar
+// segdur es la duración media del fichero (importante para el timeout)
+// devuelve kbps de download y ok
+func download(download, segname string, segdur float64) (int, bool) {
+	var bytes int64
+	var downloaded, downloadedok bool
+	var kbps int
 
-	return ok
+	cmd := fmt.Sprintf("/usr/bin/wget -t 3 --limit-rate=625k -S -O %s %s", download, segname)
+	//fmt.Println(cmd)
+	exe := cmdline.Cmdline(cmd)
+
+	lectura, err := exe.StderrPipe()
+	if err != nil {
+		fmt.Println(err)
+	}
+	mReader := bufio.NewReader(lectura)
+	tiempo := time.Now().Unix()
+	go func() {
+		for {
+			if (time.Now().Unix() - tiempo) > int64(segdur) {
+				exe.Stop()
+				fmt.Println("[downloader] WGET matado supera los XXX segundos !!!!")
+				break
+			}
+			time.Sleep(1 * time.Second)
+		}
+	}()
+	ns := time.Now().UnixNano()
+	exe.Start()
+	for { // bucle de reproduccion normal
+		line, err := mReader.ReadString('\n')
+		if err != nil {
+			////fmt.Println("Fin del wget !!!")
+			break
+		}
+		line = strings.TrimRight(line, "\n")
+		if strings.Contains(line, "HTTP/1.1 200 OK") {
+			////fmt.Println("[downloader] Downloaded OK")
+			downloaded = true
+		}
+		if strings.Contains(line, "Content-Length:") { //   Content-Length: 549252
+			line = strings.Trim(line, " ")
+			fmt.Sscanf(line, "Content-Length: %d", &bytes)
+		}
+		////fmt.Printf("[wget] %s\n", line) //==>
+	}
+	exe.Stop()
+	ns = time.Now().UnixNano() - ns
+
+	if downloaded {
+		// comprobar que el fichero se ha bajado correctamente
+		fileinfo, err := os.Stat(download) // fileinfo.Size()
+		if err != nil {
+			downloadedok = false
+			fmt.Println(err)
+		}
+		filesize := fileinfo.Size()
+		if filesize == int64(bytes) {
+			downloadedok = true
+		} else {
+			downloadedok = false
+		}
+		kbps = int(filesize * 8.0 * 1e9 / ns / 1024.0)
+	}
+
+	return kbps, downloadedok
 }
 
 func (h *HLSPlay) command1(ch chan int) { // omxplayer
@@ -290,6 +408,7 @@ func (h *HLSPlay) command1(ch chan int) { // omxplayer
 			}
 			if strings.Contains(line, "Time:") {
 				////fmt.Printf("[omx] %s\n", line)
+				h.omxstat = line
 			}
 			runtime.Gosched()
 		}
@@ -402,6 +521,10 @@ func (h *HLSPlay) director() {
 		}
 
 		h.mu_seg.Lock()
+		if !h.running {
+			h.mu_seg.Unlock()
+			break
+		}
 		indexplay := h.lastPlay
 		h.mu_seg.Unlock()
 
