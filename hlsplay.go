@@ -18,8 +18,9 @@ import (
 	"time"
 )
 
+var fiforoot = "/tmp/"
+
 func init() {
-	fiforoot := "/tmp/"
 	exec.Command("/bin/sh", "-c", "rm -f "+fiforoot+"fifo*").Run()
 	syscall.Mkfifo(fiforoot+"fifo1", 0666)
 	syscall.Mkfifo(fiforoot+"fifo2", 0666)
@@ -278,7 +279,7 @@ func (h *HLSPlay) command1(ch chan int) { // omxplayer
 		vol := toInt(h.settings["vol"])
 		// creamos el cmdomx
 		// /usr/bin/omxplayer -s -o both --vol 100 --hw --win '0 0 719 575' --no-osd -b /tmp/fifo2
-		h.cmdomx = fmt.Sprintf("/usr/bin/omxplayer -s -o both --vol %d --hw%s --layer 100 --no-osd -b --live --threshold 1.0 /tmp/fifo2", 100*vol, overscan)
+		h.cmdomx = fmt.Sprintf("/usr/bin/omxplayer -s -o both --vol %d --hw%s --layer 100 --no-osd -b --live --threshold 1.0 %sfifo2", 100*vol, overscan, fiforoot)
 		h.exe = cmdline.Cmdline(h.cmdomx)
 		lectura, err := h.exe.StderrPipe()
 		if err != nil {
@@ -357,7 +358,7 @@ func (h *HLSPlay) command1(ch chan int) { // omxplayer
 func (h *HLSPlay) command2(ch chan int) { // ffmpeg
 	var tiempo int64
 	for {
-		h.exe2 = cmdline.Cmdline("/usr/bin/ffmpeg -y -f mpegts -re -i /tmp/fifo1 -f mpegts -acodec copy -vcodec copy /tmp/fifo2")
+		h.exe2 = cmdline.Cmdline("/usr/bin/ffmpeg -y -f mpegts -re -i " + fiforoot + "fifo1 -f mpegts -acodec copy -vcodec copy " + fiforoot + "fifo2")
 		lectura, err := h.exe2.StderrPipe()
 		if err != nil {
 			fmt.Println(err)
@@ -419,7 +420,7 @@ func (h *HLSPlay) command2(ch chan int) { // ffmpeg
 // secuencia /tmp/fifo1
 func (h *HLSPlay) secuenciador(file string, indexPlay int) {
 
-	fw, err := os.OpenFile("/tmp/fifo1", os.O_WRONLY|os.O_CREATE, 0666)
+	fw, err := os.OpenFile(fiforoot+"fifo1", os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
 		log.Fatalln(err)
 	}
