@@ -178,6 +178,22 @@ func (h *HLSPlay) Status() *Status {
 	return &st
 }
 
+func (h *HLSPlay) Volume(up bool) {
+	h.mu_seg.Lock()
+	defer h.mu_seg.Unlock()
+	if up {
+		if h.volume < 12 {
+			h.mediawriter.WriteByte('+')
+			h.mediawriter.Flush()
+		}
+	} else {
+		if h.volume > -12 {
+			h.mediawriter.WriteByte('-')
+			h.mediawriter.Flush()
+		}
+	}
+}
+
 func (h *HLSPlay) m3u8parser() {
 	for {
 		h.m3u8pls.Parse()  // bajamos y parseamos la url m3u8 HLS a reproducir
