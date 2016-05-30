@@ -267,77 +267,6 @@ func (h *HLSPlay) downloader() {
 	}
 }
 
-// baja un segmento al fichero download y lo reintenta 3 veces con un timeout 2 * segdur
-// download es la direccion absoluta del fichero donde bajarlo
-// segname es la URL completa del fichero a bajar
-// segdur es la duración media del fichero (importante para el timeout)
-// devuelve kbps de download y ok
-func download(download, segname string, segdur float64) (int, bool) {
-	var bytes int64
-	var downloaded, downloadedok bool
-	var kbps int
-
-	cmd := fmt.Sprintf("/usr/bin/wget -t 3 --limit-rate=625k -S -O %s %s", download, segname)
-	//fmt.Println(cmd)
-	exe := cmdline.Cmdline(cmd)
-
-	lectura, err := exe.StderrPipe()
-	if err != nil {
-		fmt.Println(err)
-	}
-	mReader := bufio.NewReader(lectura)
-	tiempo := time.Now().Unix()
-	go func() {
-		for {
-			if (time.Now().Unix() - tiempo) > int64(segdur) {
-				exe.Stop()
-				fmt.Println("[downloader] WGET matado supera los XXX segundos !!!!")
-				break
-			}
-			time.Sleep(1 * time.Second)
-		}
-	}()
-	ns := time.Now().UnixNano()
-	exe.Start()
-	for { // bucle de reproduccion normal
-		line, err := mReader.ReadString('\n')
-		if err != nil {
-			////fmt.Println("Fin del wget !!!")
-			break
-		}
-		line = strings.TrimRight(line, "\n")
-		if strings.Contains(line, "HTTP/1.1 200 OK") {
-			////fmt.Println("[downloader] Downloaded OK")
-			downloaded = true
-		}
-		if strings.Contains(line, "Content-Length:") { //   Content-Length: 549252
-			line = strings.Trim(line, " ")
-			fmt.Sscanf(line, "Content-Length: %d", &bytes)
-		}
-		////fmt.Printf("[wget] %s\n", line) //==>
-	}
-	exe.Stop()
-	ns = time.Now().UnixNano() - ns
-
-	if downloaded {
-		// comprobar que el fichero se ha bajado correctamente
-		fileinfo, err := os.Stat(download) // fileinfo.Size()
-		if err != nil {
-			downloadedok = false
-			fmt.Println(err)
-		}
-		filesize := fileinfo.Size()
-		if filesize == int64(bytes) {
-			downloadedok = true
-		} else {
-			downloadedok = false
-		}
-		kbps = int(filesize * 8.0 * 1e9 / ns / 1024.0)
-	}
-
-	return kbps, downloadedok
-}
-
 func (h *HLSPlay) command1(ch chan int) { // omxplayer
 	var tiempo int64
 	for {
@@ -554,4 +483,75 @@ func killall(list string) {
 func toInt(cant string) (res int) {
 	res, _ = strconv.Atoi(cant)
 	return
+}
+
+// baja un segmento al fichero download y lo reintenta 3 veces con un timeout 2 * segdur
+// download es la direccion absoluta del fichero donde bajarlo
+// segname es la URL completa del fichero a bajar
+// segdur es la duración media del fichero (importante para el timeout)
+// devuelve kbps de download y ok
+func download(download, segname string, segdur float64) (int, bool) {
+	var bytes int64
+	var downloaded, downloadedok bool
+	var kbps int
+
+	cmd := fmt.Sprintf("/usr/bin/wget -t 3 --limit-rate=625k -S -O %s %s", download, segname)
+	//fmt.Println(cmd)
+	exe := cmdline.Cmdline(cmd)
+
+	lectura, err := exe.StderrPipe()
+	if err != nil {
+		fmt.Println(err)
+	}
+	mReader := bufio.NewReader(lectura)
+	tiempo := time.Now().Unix()
+	go func() {
+		for {
+			if (time.Now().Unix() - tiempo) > int64(segdur) {
+				exe.Stop()
+				fmt.Println("[downloader] WGET matado supera los XXX segundos !!!!")
+				break
+			}
+			time.Sleep(1 * time.Second)
+		}
+	}()
+	ns := time.Now().UnixNano()
+	exe.Start()
+	for { // bucle de reproduccion normal
+		line, err := mReader.ReadString('\n')
+		if err != nil {
+			////fmt.Println("Fin del wget !!!")
+			break
+		}
+		line = strings.TrimRight(line, "\n")
+		if strings.Contains(line, "HTTP/1.1 200 OK") {
+			////fmt.Println("[downloader] Downloaded OK")
+			downloaded = true
+		}
+		if strings.Contains(line, "Content-Length:") { //   Content-Length: 549252
+			line = strings.Trim(line, " ")
+			fmt.Sscanf(line, "Content-Length: %d", &bytes)
+		}
+		////fmt.Printf("[wget] %s\n", line) //==>
+	}
+	exe.Stop()
+	ns = time.Now().UnixNano() - ns
+
+	if downloaded {
+		// comprobar que el fichero se ha bajado correctamente
+		fileinfo, err := os.Stat(download) // fileinfo.Size()
+		if err != nil {
+			downloadedok = false
+			fmt.Println(err)
+		}
+		filesize := fileinfo.Size()
+		if filesize == int64(bytes) {
+			downloadedok = true
+		} else {
+			downloadedok = false
+		}
+		kbps = int(filesize * 8.0 * 1e9 / ns / 1024.0)
+	}
+
+	return kbps, downloadedok
 }
