@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"github.com/isaacml/cmdline"
-	"github.com/todostreaming/fifo"
+	"github.com/todostreaming/cola"
 	"github.com/todostreaming/m3u8pls"
 	"io"
 	"log"
@@ -69,9 +69,8 @@ type HLSPlay struct {
 	lastPlay      int                // index del segmento que se envió al secuenciador desde el director
 	lastkbps      int                // download kbps speed
 	omxstat       string             // log del omxplayer
-	anotados      map[string]float64 // segmentos anotados en el FIFO
 	m3u8pls       *m3u8pls.M3U8pls   // parser M3U8
-	cola          *fifo.Queue        // cola con los segments/dur para bajar
+	cola          *cola.Cola        // cola con los segments/dur para bajar
 	mu_play       []sync.Mutex       // Mutex para la escritura/lectura de segmentos *.ts cíclicos
 }
 
@@ -91,9 +90,8 @@ func HLSPlayer(m3u8, downloaddir string, settings map[string]string) *HLSPlay {
 	hls.lastIndex = 0
 	hls.lastPlay = 0
 	hls.lastkbps = 0
-	hls.anotados = make(map[string]float64)
 	hls.m3u8pls = m3u8pls.M3U8playlist(hls.m3u8)
-	hls.cola = fifo.NewQueue()
+	hls.cola = cola.CreateQueue(300)  // creamos una cola con un timeout de 5 minutos = 300 secs
 	hls.omxstat = ""
 	// calculamos los segmentos máximos que caben
 	ramdisk, ok := hls.settings["ramdisk"] // ramdisk in MBs
@@ -125,7 +123,7 @@ func (h *HLSPlay) Run() error {
 	go h.command2(ch)
 	go h.m3u8parser()
 	go h.downloader() // bajando a su bola sin parar
-	go h.director()   // envia segmentos al secuenciador cuando s.playing && s.restamping
+//	go h.director()   // envia segmentos al secuenciador cuando s.playing && s.restamping
 
 	return err
 }
@@ -148,8 +146,7 @@ func (h *HLSPlay) Stop() error {
 	h.lastIndex = 0
 	h.lastPlay = 0
 	h.lastkbps = 0
-	h.anotados = map[string]float64{}
-	h.cola = fifo.NewQueue()
+	h.cola = cola.CreateQueue(300)  // creamos una cola con un timeout de 5 minutos = 300 secs borrando la anterior
 	h.omxstat = ""
 	killall("omxplayer.bin")
 	h.exe.Stop()
@@ -196,8 +193,11 @@ func (h *HLSPlay) Volume(up bool) {
 
 func (h *HLSPlay) m3u8parser() {
 	for {
+		fmt.Printf("[m3u8parser] - 0 Parsing M3U8\n")
+		h.cola.Keeping()
 		h.m3u8pls.Parse()  // bajamos y parseamos la url m3u8 HLS a reproducir
 		if !h.m3u8pls.Ok { // m3u8 no accesible o explotable
+			fmt.Printf("[m3u8parser] - 1 NO OK\n")
 			time.Sleep(2 * time.Second)
 			continue
 		}
@@ -207,6 +207,7 @@ func (h *HLSPlay) m3u8parser() {
 			break
 		}
 		if h.m3u8pls.Mediaseq == h.lastMediaseq { // no ha cambiado el m3u8 aún
+			fmt.Printf("[m3u8parser] - 2 NO NEW M3U8\n")
 			h.mu_seg.Unlock()
 			time.Sleep(time.Duration(h.m3u8pls.Targetdur/2.0) * time.Second)
 			continue
@@ -214,15 +215,7 @@ func (h *HLSPlay) m3u8parser() {
 		h.lastMediaseq = h.m3u8pls.Mediaseq
 		h.lastTargetdur = h.m3u8pls.Targetdur
 		for k, v := range h.m3u8pls.Segment { // segmento
-			_, ok := h.anotados[v]
-			if ok { // ya esta anotado en la cola, pasamos al siguiente segmento del m3u8
-				continue
-			}
-			h.anotados[v] = h.m3u8pls.Duration[k]
-			h.cola.Add(&Segmento{
-				segname: h.m3u8pls.Segment[k],
-				segdur:  h.m3u8pls.Duration[k],
-			})
+			h.cola.Add(v, h.m3u8pls.Duration[k])
 		}
 		h.mu_seg.Unlock()
 
@@ -233,6 +226,7 @@ func (h *HLSPlay) m3u8parser() {
 func (h *HLSPlay) downloader() {
 	started := true
 	for {
+		fmt.Printf("[downloader] - 0 => Downloading\n")
 		os.Remove(h.downloaddir + "download.ts")
 		syscall.Sync()
 		h.mu_seg.Lock()
@@ -245,12 +239,13 @@ func (h *HLSPlay) downloader() {
 			time.Sleep(1 * time.Second)
 			continue
 		}
-		item := h.cola.Next()
-		p := item.(*Segmento) // p.segname y p.segdur
-		kbps, ok := download(h.downloaddir+"download.ts", p.segname, p.segdur)
+		segname, segdur := h.cola.Next()
+		kbps, ok := download(h.downloaddir+"download.ts", segname, segdur)
 		if !ok {
+			fmt.Printf("[downloader] - 3 => No se lo baja\n")
 			continue
 		}
+		fmt.Printf("[downloader] - 4 => Bajado OK\n")
 
 		h.mu_seg.Lock()
 		h.lastkbps = kbps
@@ -260,25 +255,24 @@ func (h *HLSPlay) downloader() {
 			// copiar numsegs veces el segmento download.ts
 			for i := 0; i < h.numsegs; i++ {
 				cp := fmt.Sprintf("cp -f %sdownload.ts %splay%d.ts", h.downloaddir, h.downloaddir, i)
+				fmt.Printf("[downloader] - 4 => %s\n",cp)
 				exec.Command("/bin/sh", "-s", cp).Run()
 			}
 		} else {
 			// copiar solo una vez donde corresponde download.ts
 			h.mu_seg.Lock()
+			h.lastIndex++
+			if h.lastIndex >= h.numsegs {
+				h.lastIndex = 0
+			}
 			i := h.lastIndex
 			h.mu_seg.Unlock()
 
 			h.mu_play[i].Lock()
 			cp := fmt.Sprintf("cp -f %sdownload.ts %splay%d.ts", h.downloaddir, h.downloaddir, i)
+			fmt.Printf("[downloader] - 5 => %s\n",cp)
 			exec.Command("/bin/sh", "-s", cp).Run()
 			h.mu_play[i].Unlock()
-
-			h.mu_seg.Lock()
-			h.lastIndex++
-			if h.lastIndex >= h.numsegs {
-				h.lastIndex = 0
-			}
-			h.mu_seg.Unlock()
 		}
 		runtime.Gosched()
 	}
@@ -526,7 +520,7 @@ func download(download, segname string, segdur float64) (int, bool) {
 		for {
 			if (time.Now().Unix() - tiempo) > int64(segdur) {
 				exe.Stop()
-				fmt.Println("[downloader] WGET matado supera los XXX segundos !!!!")
+				fmt.Println("[download] WGET matado supera los XXX segundos !!!!")
 				break
 			}
 			time.Sleep(1 * time.Second)
