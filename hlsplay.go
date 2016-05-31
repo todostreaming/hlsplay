@@ -20,7 +20,7 @@ import (
 
 const( 
 	fiforoot = "/tmp/"
-	queuetimeout = 60
+	queuetimeout = 60 // creamos una cola con un timeout de 2 minutos = 120 secs
 )
 func init() {
 	exec.Command("/bin/sh", "-c", "rm -f "+fiforoot+"fifo*").Run()
@@ -93,7 +93,7 @@ func HLSPlayer(m3u8, downloaddir string, settings map[string]string) *HLSPlay {
 	hls.lastPlay = 0
 	hls.lastkbps = 0
 	hls.m3u8pls = m3u8pls.M3U8playlist(hls.m3u8)
-	hls.cola = cola.CreateQueue(queuetimeout)  // creamos una cola con un timeout de 5 minutos = 300 secs
+	hls.cola = cola.CreateQueue(queuetimeout)
 	hls.omxstat = ""
 	// calculamos los segmentos máximos que caben
 	ramdisk, ok := hls.settings["ramdisk"] // ramdisk in MBs
@@ -109,7 +109,7 @@ func HLSPlayer(m3u8, downloaddir string, settings map[string]string) *HLSPlay {
 
 func (h *HLSPlay) Run() error {
 	var err error
-//	ch := make(chan int)
+	ch := make(chan int)
 
 	h.mu_seg.Lock()
 	if h.running { // ya esta corriendo
@@ -121,11 +121,11 @@ func (h *HLSPlay) Run() error {
 	h.running = true                                                   // comienza a correr
 	h.mu_seg.Unlock()
 
-//	go h.command1(ch)
-//	go h.command2(ch)
+	go h.command1(ch)
+	go h.command2(ch)
 	go h.m3u8parser()
 	go h.downloader() // bajando a su bola sin parar
-//	go h.director()   // envia segmentos al secuenciador cuando s.playing && s.restamping
+	go h.director()   // envia segmentos al secuenciador cuando s.playing && s.restamping
 
 	return err
 }
@@ -148,7 +148,7 @@ func (h *HLSPlay) Stop() error {
 	h.lastIndex = 0
 	h.lastPlay = 0
 	h.lastkbps = 0
-	h.cola = cola.CreateQueue(queuetimeout)  // creamos una cola con un timeout de 5 minutos = 300 secs borrando la anterior
+	h.cola = cola.CreateQueue(queuetimeout)
 	h.omxstat = ""
 	killall("omxplayer.bin")
 	h.exe.Stop()
@@ -262,7 +262,7 @@ func (h *HLSPlay) downloader() {
 			for i := 0; i < h.numsegs; i++ {
 				cp := fmt.Sprintf("cp -f %sdownload.ts %splay%d.ts", h.downloaddir, h.downloaddir, i)
 				fmt.Printf("[downloader] - 4 => %s\n",cp)
-				exec.Command("/bin/sh", "-s", cp).Run()
+				exec.Command("/bin/sh", "-c", cp).Run()
 			}
 		} else {
 			// copiar solo una vez donde corresponde download.ts
@@ -277,7 +277,7 @@ func (h *HLSPlay) downloader() {
 			h.mu_play[i].Lock()
 			cp := fmt.Sprintf("cp -f %sdownload.ts %splay%d.ts", h.downloaddir, h.downloaddir, i)
 			fmt.Printf("[downloader] - 5 => %s\n",cp)
-			exec.Command("/bin/sh", "-s", cp).Run()
+			exec.Command("/bin/sh", "-c", cp).Run()
 			h.mu_play[i].Unlock()
 		}
 		syscall.Sync()
@@ -464,7 +464,7 @@ func (h *HLSPlay) director() {
 	for {
 		if started {
 			started = false
-			time.Sleep(time.Duration(h.m3u8pls.Targetdur) * time.Second)
+			time.Sleep(10 * time.Second)
 		}
 
 		h.mu_seg.Lock()
@@ -476,6 +476,7 @@ func (h *HLSPlay) director() {
 		h.mu_seg.Unlock()
 
 		file := fmt.Sprintf("%splay%d.ts", h.downloaddir, indexplay)
+		fmt.Printf("[director] Play %s\n",file)
 		h.secuenciador(file, indexplay)
 
 		h.mu_seg.Lock()
