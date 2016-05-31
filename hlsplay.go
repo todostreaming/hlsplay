@@ -18,8 +18,10 @@ import (
 	"time"
 )
 
-const fiforoot = "/tmp/"
-
+const( 
+	fiforoot = "/tmp/"
+	queuetimeout = 60
+)
 func init() {
 	exec.Command("/bin/sh", "-c", "rm -f "+fiforoot+"fifo*").Run()
 	syscall.Mkfifo(fiforoot+"fifo1", 0666)
@@ -91,7 +93,7 @@ func HLSPlayer(m3u8, downloaddir string, settings map[string]string) *HLSPlay {
 	hls.lastPlay = 0
 	hls.lastkbps = 0
 	hls.m3u8pls = m3u8pls.M3U8playlist(hls.m3u8)
-	hls.cola = cola.CreateQueue(300)  // creamos una cola con un timeout de 5 minutos = 300 secs
+	hls.cola = cola.CreateQueue(queuetimeout)  // creamos una cola con un timeout de 5 minutos = 300 secs
 	hls.omxstat = ""
 	// calculamos los segmentos máximos que caben
 	ramdisk, ok := hls.settings["ramdisk"] // ramdisk in MBs
@@ -107,7 +109,7 @@ func HLSPlayer(m3u8, downloaddir string, settings map[string]string) *HLSPlay {
 
 func (h *HLSPlay) Run() error {
 	var err error
-	ch := make(chan int)
+//	ch := make(chan int)
 
 	h.mu_seg.Lock()
 	if h.running { // ya esta corriendo
@@ -119,8 +121,8 @@ func (h *HLSPlay) Run() error {
 	h.running = true                                                   // comienza a correr
 	h.mu_seg.Unlock()
 
-	go h.command1(ch)
-	go h.command2(ch)
+//	go h.command1(ch)
+//	go h.command2(ch)
 	go h.m3u8parser()
 	go h.downloader() // bajando a su bola sin parar
 //	go h.director()   // envia segmentos al secuenciador cuando s.playing && s.restamping
@@ -146,7 +148,7 @@ func (h *HLSPlay) Stop() error {
 	h.lastIndex = 0
 	h.lastPlay = 0
 	h.lastkbps = 0
-	h.cola = cola.CreateQueue(300)  // creamos una cola con un timeout de 5 minutos = 300 secs borrando la anterior
+	h.cola = cola.CreateQueue(queuetimeout)  // creamos una cola con un timeout de 5 minutos = 300 secs borrando la anterior
 	h.omxstat = ""
 	killall("omxplayer.bin")
 	h.exe.Stop()
@@ -218,7 +220,8 @@ func (h *HLSPlay) m3u8parser() {
 			h.cola.Add(v, h.m3u8pls.Duration[k])
 		}
 		h.mu_seg.Unlock()
-
+		h.cola.Print()
+		
 		time.Sleep(time.Duration(h.m3u8pls.Targetdur) * time.Second)
 	}
 }
@@ -226,7 +229,6 @@ func (h *HLSPlay) m3u8parser() {
 func (h *HLSPlay) downloader() {
 	started := true
 	for {
-		fmt.Printf("[downloader] - 0 => Downloading\n")
 		os.Remove(h.downloaddir + "download.ts")
 		syscall.Sync()
 		h.mu_seg.Lock()
@@ -240,6 +242,10 @@ func (h *HLSPlay) downloader() {
 			continue
 		}
 		segname, segdur := h.cola.Next()
+		if segname == "" && segdur == 0.0 {
+			time.Sleep(1 * time.Second)
+			continue
+		}
 		kbps, ok := download(h.downloaddir+"download.ts", segname, segdur)
 		if !ok {
 			fmt.Printf("[downloader] - 3 => No se lo baja\n")
@@ -274,6 +280,7 @@ func (h *HLSPlay) downloader() {
 			exec.Command("/bin/sh", "-s", cp).Run()
 			h.mu_play[i].Unlock()
 		}
+		syscall.Sync()
 		runtime.Gosched()
 	}
 }
@@ -505,9 +512,10 @@ func download(download, segname string, segdur float64) (int, bool) {
 	var bytes int64
 	var downloaded, downloadedok bool
 	var kbps int
+	var downloading bool
 
 	cmd := fmt.Sprintf("/usr/bin/wget -t 3 --limit-rate=625k -S -O %s %s", download, segname)
-	//fmt.Println(cmd)
+	fmt.Println(cmd)
 	exe := cmdline.Cmdline(cmd)
 
 	lectura, err := exe.StderrPipe()
@@ -518,7 +526,7 @@ func download(download, segname string, segdur float64) (int, bool) {
 	tiempo := time.Now().Unix()
 	go func() {
 		for {
-			if (time.Now().Unix() - tiempo) > int64(segdur) {
+			if (time.Now().Unix() - tiempo) > int64(segdur) && downloading {
 				exe.Stop()
 				fmt.Println("[download] WGET matado supera los XXX segundos !!!!")
 				break
@@ -526,6 +534,7 @@ func download(download, segname string, segdur float64) (int, bool) {
 			time.Sleep(1 * time.Second)
 		}
 	}()
+	downloading = true
 	ns := time.Now().UnixNano()
 	exe.Start()
 	for { // bucle de reproduccion normal
@@ -546,6 +555,7 @@ func download(download, segname string, segdur float64) (int, bool) {
 		////fmt.Printf("[wget] %s\n", line) //==>
 	}
 	exe.Stop()
+	downloading = false
 	ns = time.Now().UnixNano() - ns
 
 	if downloaded {
