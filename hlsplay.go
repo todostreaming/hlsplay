@@ -232,8 +232,6 @@ func (h *HLSPlay) m3u8parser() {
 func (h *HLSPlay) downloader() {
 	started := true
 	for {
-		os.Remove(h.downloaddir + "download.ts")
-		syscall.Sync()
 		h.mu_seg.Lock()
 		if !h.running {
 			h.mu_seg.Unlock()
@@ -249,8 +247,11 @@ func (h *HLSPlay) downloader() {
 			time.Sleep(1 * time.Second)
 			continue
 		}
+		os.Remove(h.downloaddir + "download.ts")
+		syscall.Sync()
 		kbps, ok := download(h.downloaddir+"download.ts", segname, segdur)
 		if !ok {
+			runtime.Gosched()
 			continue
 		}
 
@@ -438,11 +439,12 @@ func (h *HLSPlay) command2(ch chan int) { // ffmpeg
 
 // esta funcion envia los ficheros a reproducir a la cola de reproducción en el FIFO1 /tmp/fifo1
 // secuencia /tmp/fifo1
-func (h *HLSPlay) secuenciador(file string, indexPlay int) {
+func (h *HLSPlay) secuenciador(file string, indexPlay int) error {
 
 	fw, err := os.OpenFile(fiforoot+"fifo1", os.O_WRONLY, 0666) /// |os.O_CREATE
 	if err != nil {
-		Warning.Fatalln(err)
+		Warning.Println(err)
+		return err
 	}
 	defer fw.Close()
 
@@ -450,7 +452,8 @@ func (h *HLSPlay) secuenciador(file string, indexPlay int) {
 
 	fr, err := os.Open(file) // read-only
 	if err != nil {
-		Warning.Fatalln(err)
+		Warning.Println(err)
+		return err
 	}
 	if _, err := io.Copy(fw, fr); err == nil {
 		////fmt.Printf("[secuenciador] (%s) Copiados %d bytes\n", file, n)
@@ -460,6 +463,7 @@ func (h *HLSPlay) secuenciador(file string, indexPlay int) {
 	fr.Close()
 
 	h.mu_play[indexPlay].Unlock()
+	return nil
 }
 
 func (h *HLSPlay) director() {
@@ -480,7 +484,12 @@ func (h *HLSPlay) director() {
 
 		file := fmt.Sprintf("%splay%d.ts", h.downloaddir, indexplay)
 		////fmt.Printf("[director] Play %s\n",file)
-		h.secuenciador(file, indexplay)
+		err := h.secuenciador(file, indexplay)
+		if err != nil {
+			Warning.Println(err)
+			runtime.Gosched()
+			continue
+		}
 
 		h.mu_seg.Lock()
 		h.lastPlay++
