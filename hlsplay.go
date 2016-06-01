@@ -567,7 +567,9 @@ func download(download, segname string, segdur float64) (int, bool) {
 		} else {
 			downloadedok = false
 		}
-		kbps = int(filesize * 8.0 * 1e9 / ns / 1024.0)
+		if ns != 0 { // evitar un 0 divisor
+			kbps = int(filesize * 8.0 * 1e9 / ns / 1024.0)
+		}
 	}
 
 	return kbps, downloadedok
