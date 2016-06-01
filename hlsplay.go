@@ -195,11 +195,9 @@ func (h *HLSPlay) Volume(up bool) {
 
 func (h *HLSPlay) m3u8parser() {
 	for {
-		fmt.Printf("[m3u8parser] - 0 Parsing M3U8\n")
 		h.cola.Keeping()
 		h.m3u8pls.Parse()  // bajamos y parseamos la url m3u8 HLS a reproducir
 		if !h.m3u8pls.Ok { // m3u8 no accesible o explotable
-			fmt.Printf("[m3u8parser] - 1 NO OK\n")
 			time.Sleep(2 * time.Second)
 			continue
 		}
@@ -209,7 +207,6 @@ func (h *HLSPlay) m3u8parser() {
 			break
 		}
 		if h.m3u8pls.Mediaseq == h.lastMediaseq { // no ha cambiado el m3u8 aún
-			fmt.Printf("[m3u8parser] - 2 NO NEW M3U8\n")
 			h.mu_seg.Unlock()
 			time.Sleep(time.Duration(h.m3u8pls.Targetdur/2.0) * time.Second)
 			continue
@@ -220,7 +217,7 @@ func (h *HLSPlay) m3u8parser() {
 			h.cola.Add(v, h.m3u8pls.Duration[k])
 		}
 		h.mu_seg.Unlock()
-		h.cola.Print()
+		////h.cola.Print()
 		
 		time.Sleep(time.Duration(h.m3u8pls.Targetdur) * time.Second)
 	}
@@ -248,10 +245,8 @@ func (h *HLSPlay) downloader() {
 		}
 		kbps, ok := download(h.downloaddir+"download.ts", segname, segdur)
 		if !ok {
-			fmt.Printf("[downloader] - 3 => No se lo baja\n")
 			continue
 		}
-		fmt.Printf("[downloader] - 4 => Bajado OK\n")
 
 		h.mu_seg.Lock()
 		h.lastkbps = kbps
@@ -261,7 +256,7 @@ func (h *HLSPlay) downloader() {
 			// copiar numsegs veces el segmento download.ts
 			for i := 0; i < h.numsegs; i++ {
 				cp := fmt.Sprintf("cp -f %sdownload.ts %splay%d.ts", h.downloaddir, h.downloaddir, i)
-				fmt.Printf("[downloader] - 4 => %s\n",cp)
+				////fmt.Printf("[downloader] - 4 => %s\n",cp)
 				exec.Command("/bin/sh", "-c", cp).Run()
 			}
 		} else {
@@ -276,7 +271,7 @@ func (h *HLSPlay) downloader() {
 
 			h.mu_play[i].Lock()
 			cp := fmt.Sprintf("cp -f %sdownload.ts %splay%d.ts", h.downloaddir, h.downloaddir, i)
-			fmt.Printf("[downloader] - 5 => %s\n",cp)
+			////fmt.Printf("[downloader] - 5 => %s\n",cp)
 			exec.Command("/bin/sh", "-c", cp).Run()
 			h.mu_play[i].Unlock()
 		}
@@ -449,8 +444,8 @@ func (h *HLSPlay) secuenciador(file string, indexPlay int) {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	if n, err := io.Copy(fw, fr); err == nil {
-		fmt.Printf("[secuenciador] (%s) Copiados %d bytes\n", file, n)
+	if _, err := io.Copy(fw, fr); err == nil {
+		////fmt.Printf("[secuenciador] (%s) Copiados %d bytes\n", file, n)
 	} else {
 		log.Println(err) // no salimos en caso de error de copia
 	}
@@ -464,7 +459,7 @@ func (h *HLSPlay) director() {
 	for {
 		if started {
 			started = false
-			time.Sleep(10 * time.Second)
+			time.Sleep(15 * time.Second)
 		}
 
 		h.mu_seg.Lock()
@@ -476,7 +471,7 @@ func (h *HLSPlay) director() {
 		h.mu_seg.Unlock()
 
 		file := fmt.Sprintf("%splay%d.ts", h.downloaddir, indexplay)
-		fmt.Printf("[director] Play %s\n",file)
+		////fmt.Printf("[director] Play %s\n",file)
 		h.secuenciador(file, indexplay)
 
 		h.mu_seg.Lock()
@@ -516,7 +511,7 @@ func download(download, segname string, segdur float64) (int, bool) {
 	var downloading bool
 
 	cmd := fmt.Sprintf("/usr/bin/wget -t 3 --limit-rate=625k -S -O %s %s", download, segname)
-	fmt.Println(cmd)
+	////fmt.Println(cmd)
 	exe := cmdline.Cmdline(cmd)
 
 	lectura, err := exe.StderrPipe()
@@ -529,7 +524,7 @@ func download(download, segname string, segdur float64) (int, bool) {
 		for {
 			if (time.Now().Unix() - tiempo) > int64(segdur) && downloading {
 				exe.Stop()
-				fmt.Println("[download] WGET matado supera los XXX segundos !!!!")
+				////fmt.Println("[download] WGET matado supera los XXX segundos !!!!")
 				break
 			}
 			time.Sleep(1 * time.Second)
