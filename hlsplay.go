@@ -441,7 +441,7 @@ func (h *HLSPlay) command2(ch chan int) { // ffmpeg
 // secuencia /tmp/fifo1
 func (h *HLSPlay) secuenciador(file string, indexPlay int) error {
 
-	fw, err := os.OpenFile(fiforoot+"fifo1", os.O_WRONLY, 0666) /// |os.O_CREATE
+	fw, err := os.OpenFile(fiforoot+"fifo1", os.O_WRONLY, 0666) /// |os.O_CREATE|os.O_APPEND
 	if err != nil {
 		Warning.Println(err)
 		return err
