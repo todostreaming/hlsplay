@@ -39,7 +39,7 @@ func init() {
 	if err != nil {
 		log.Fatal("hlsplay-init() fifo2")
 	}
-	Warning = log.New(os.Stderr, "[WARNING]: ", log.Ldate|log.Ltime|log.Lshortfile)
+	Warning = log.New(os.Stderr, "\n\n[WARNING]: ", log.Ldate|log.Ltime|log.Lshortfile)
 }
 
 type Status struct {
@@ -321,6 +321,7 @@ func (h *HLSPlay) command1(ch chan int) { // omxplayer
 					h.mu_seg.Unlock()
 					killall("omxplayer.bin")
 					h.exe.Stop()
+					fmt.Println("\nTimeout omxplayer !!!")
 					break
 				}
 				time.Sleep(1 * time.Second)
@@ -335,7 +336,7 @@ func (h *HLSPlay) command1(ch chan int) { // omxplayer
 				h.mu_seg.Lock()
 				h.playing = false
 				h.mu_seg.Unlock()
-				fmt.Println("Fin del omxplayer !!!")
+				fmt.Println("\nFin del omxplayer !!!")
 				break
 			}
 			line = strings.TrimRight(line, "\n")
@@ -391,6 +392,7 @@ func (h *HLSPlay) command2(ch chan int) { // ffmpeg
 					h.playing = false
 					h.mu_seg.Unlock()
 					h.exe2.Stop()
+					fmt.Println("\nTimeout ffmpeg !!!")
 					break
 				}
 				time.Sleep(1 * time.Second)
@@ -406,7 +408,7 @@ func (h *HLSPlay) command2(ch chan int) { // ffmpeg
 				h.mu_seg.Lock()
 				h.restamping = false
 				h.mu_seg.Unlock()
-				fmt.Println("Fin del ffmpeg !!!")
+				fmt.Println("\nFin del ffmpeg !!!")
 				break
 			}
 			line = strings.TrimRight(line, "\n")
@@ -438,9 +440,9 @@ func (h *HLSPlay) command2(ch chan int) { // ffmpeg
 // secuencia /tmp/fifo1
 func (h *HLSPlay) secuenciador(file string, indexPlay int) {
 
-	fw, err := os.OpenFile(fiforoot+"fifo1", os.O_WRONLY|os.O_CREATE, 0666)
+	fw, err := os.OpenFile(fiforoot+"fifo1", os.O_WRONLY, 0666) /// |os.O_CREATE
 	if err != nil {
-		Warning.Println(err)
+		Warning.Fatalln(err)
 	}
 	defer fw.Close()
 
