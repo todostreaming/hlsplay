@@ -22,6 +22,11 @@ const(
 	fiforoot = "/tmp/"
 	queuetimeout = 60 // creamos una cola con un timeout de 2 minutos = 120 secs
 )
+
+var (
+	Warning *log.Logger
+)
+
 func init() {
 	exec.Command("/bin/sh", "-c", "rm -f "+fiforoot+"fifo*").Run()
 	syscall.Mkfifo(fiforoot+"fifo1", 0666)
@@ -34,6 +39,7 @@ func init() {
 	if err != nil {
 		log.Fatal("hlsplay-init() fifo2")
 	}
+	Warning = log.New(os.Stderr, "[WARNING]: ", log.Ldate|log.Ltime|log.Lshortfile)
 }
 
 type Status struct {
@@ -295,13 +301,13 @@ func (h *HLSPlay) command1(ch chan int) { // omxplayer
 		h.exe = cmdline.Cmdline(h.cmdomx)
 		lectura, err := h.exe.StderrPipe()
 		if err != nil {
-			fmt.Println(err)
+			Warning.Println(err)
 		}
 		mReader := bufio.NewReader(lectura)
 
 		stdinWrite, err := h.exe.StdinPipe()
 		if err != nil {
-			fmt.Println(err)
+			Warning.Println(err)
 		}
 		h.mediawriter = bufio.NewWriter(stdinWrite)
 		h.mu_seg.Unlock()
@@ -329,7 +335,7 @@ func (h *HLSPlay) command1(ch chan int) { // omxplayer
 				h.mu_seg.Lock()
 				h.playing = false
 				h.mu_seg.Unlock()
-				////fmt.Println("Fin del omxplayer !!!")
+				fmt.Println("Fin del omxplayer !!!")
 				break
 			}
 			line = strings.TrimRight(line, "\n")
@@ -373,7 +379,7 @@ func (h *HLSPlay) command2(ch chan int) { // ffmpeg
 		h.exe2 = cmdline.Cmdline("/usr/bin/ffmpeg -y -f mpegts -re -i " + fiforoot + "fifo1 -f mpegts -acodec copy -vcodec copy " + fiforoot + "fifo2")
 		lectura, err := h.exe2.StderrPipe()
 		if err != nil {
-			fmt.Println(err)
+			Warning.Println(err)
 		}
 		mReader := bufio.NewReader(lectura)
 		tiempo = time.Now().Unix()
@@ -400,7 +406,7 @@ func (h *HLSPlay) command2(ch chan int) { // ffmpeg
 				h.mu_seg.Lock()
 				h.restamping = false
 				h.mu_seg.Unlock()
-				////fmt.Println("Fin del ffmpeg !!!")
+				fmt.Println("Fin del ffmpeg !!!")
 				break
 			}
 			line = strings.TrimRight(line, "\n")
@@ -434,7 +440,7 @@ func (h *HLSPlay) secuenciador(file string, indexPlay int) {
 
 	fw, err := os.OpenFile(fiforoot+"fifo1", os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
-		log.Fatalln(err)
+		Warning.Println(err)
 	}
 	defer fw.Close()
 
@@ -442,12 +448,12 @@ func (h *HLSPlay) secuenciador(file string, indexPlay int) {
 
 	fr, err := os.Open(file) // read-only
 	if err != nil {
-		log.Fatalln(err)
+		Warning.Fatalln(err)
 	}
 	if _, err := io.Copy(fw, fr); err == nil {
 		////fmt.Printf("[secuenciador] (%s) Copiados %d bytes\n", file, n)
 	} else {
-		log.Println(err) // no salimos en caso de error de copia
+		Warning.Println(err) // no salimos en caso de error de copia
 	}
 	fr.Close()
 
@@ -516,7 +522,7 @@ func download(download, segname string, segdur float64) (int, bool) {
 
 	lectura, err := exe.StderrPipe()
 	if err != nil {
-		fmt.Println(err)
+		Warning.Println(err)
 	}
 	mReader := bufio.NewReader(lectura)
 	tiempo := time.Now().Unix()
@@ -559,7 +565,7 @@ func download(download, segname string, segdur float64) (int, bool) {
 		fileinfo, err := os.Stat(download) // fileinfo.Size()
 		if err != nil {
 			downloadedok = false
-			fmt.Println(err)
+			Warning.Println(err)
 		}
 		filesize := fileinfo.Size()
 		if filesize == int64(bytes) {
