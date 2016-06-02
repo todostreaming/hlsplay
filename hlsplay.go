@@ -18,13 +18,14 @@ import (
 	"time"
 )
 
-const( 
-	fiforoot = "/tmp/"
-	queuetimeout = 60 // creamos una cola con un timeout de 2 minutos = 120 secs
+const (
+	fiforoot     = "/var/segments/" // /tmp/
+	queuetimeout = 60               // creamos una cola con un timeout de 2 minutos = 120 secs
 )
 
 var (
 	Warning *log.Logger
+	fw      *os.File //FIFO1 File descriptor
 )
 
 func init() {
@@ -73,13 +74,13 @@ type HLSPlay struct {
 	numsegs       int
 	lastTargetdur float64
 	lastMediaseq  int64
-	lastIndex     int                // index del segmento donde toca copiar download.ts  entre 0 y numsegs-1
-	lastPlay      int                // index del segmento que se envió al secuenciador desde el director
-	lastkbps      int                // download kbps speed
-	omxstat       string             // log del omxplayer
-	m3u8pls       *m3u8pls.M3U8pls   // parser M3U8
-	cola          *cola.Cola        // cola con los segments/dur para bajar
-	mu_play       []sync.Mutex       // Mutex para la escritura/lectura de segmentos *.ts cíclicos
+	lastIndex     int              // index del segmento donde toca copiar download.ts  entre 0 y numsegs-1
+	lastPlay      int              // index del segmento que se envió al secuenciador desde el director
+	lastkbps      int              // download kbps speed
+	omxstat       string           // log del omxplayer
+	m3u8pls       *m3u8pls.M3U8pls // parser M3U8
+	cola          *cola.Cola       // cola con los segments/dur para bajar
+	mu_play       []sync.Mutex     // Mutex para la escritura/lectura de segmentos *.ts cíclicos
 }
 
 func HLSPlayer(m3u8, downloaddir string, settings map[string]string) *HLSPlay {
@@ -224,7 +225,7 @@ func (h *HLSPlay) m3u8parser() {
 		}
 		h.mu_seg.Unlock()
 		////h.cola.Print()
-		
+
 		time.Sleep(time.Duration(h.m3u8pls.Targetdur) * time.Second)
 	}
 }
@@ -299,6 +300,7 @@ func (h *HLSPlay) command1(ch chan int) { // omxplayer
 		// creamos el cmdomx
 		// /usr/bin/omxplayer -s -o both --vol 100 --hw --win '0 0 719 575' --no-osd -b /tmp/fifo2
 		h.cmdomx = fmt.Sprintf("/usr/bin/omxplayer -s -o both --vol %d --hw%s --layer 100 --no-osd -b --live --threshold 1.0 %sfifo2", 100*vol, overscan, fiforoot)
+		////fmt.Println(h.cmdomx)
 		h.exe = cmdline.Cmdline(h.cmdomx)
 		lectura, err := h.exe.StderrPipe()
 		if err != nil {
@@ -378,7 +380,9 @@ func (h *HLSPlay) command1(ch chan int) { // omxplayer
 func (h *HLSPlay) command2(ch chan int) { // ffmpeg
 	var tiempo int64
 	for {
-		h.exe2 = cmdline.Cmdline("/usr/bin/ffmpeg -y -f mpegts -re -i " + fiforoot + "fifo1 -f mpegts -acodec copy -vcodec copy " + fiforoot + "fifo2")
+		cmd2 := fmt.Sprintf("/usr/bin/ffmpeg -y -f mpegts -re -i %sfifo1 -f mpegts -acodec copy -vcodec copy %sfifo2", fiforoot, fiforoot)
+		////fmt.Println(cmd2)
+		h.exe2 = cmdline.Cmdline(cmd2)
 		lectura, err := h.exe2.StderrPipe()
 		if err != nil {
 			Warning.Println(err)
@@ -406,6 +410,7 @@ func (h *HLSPlay) command2(ch chan int) { // ffmpeg
 			tiempo = time.Now().Unix()
 			line, err := mReader.ReadString('\n')
 			if err != nil {
+				fw.Close() // closes FIFO1
 				h.mu_seg.Lock()
 				h.restamping = false
 				h.mu_seg.Unlock()
@@ -418,6 +423,10 @@ func (h *HLSPlay) command2(ch chan int) { // ffmpeg
 				h.mu_seg.Lock()
 				h.restamping = true
 				h.mu_seg.Unlock()
+				fw, err = os.OpenFile(fiforoot+"fifo1", os.O_WRONLY|os.O_TRUNC, 0666) /// |os.O_CREATE|os.O_APPEND (O_WRONLY|O_CREAT|O_TRUNC)
+				if err != nil {
+					Warning.Fatalln(err)
+				}
 			}
 			if strings.Contains(line, "frame=") {
 				////fmt.Printf("[ffmpeg] %s\n", line)
@@ -440,14 +449,14 @@ func (h *HLSPlay) command2(ch chan int) { // ffmpeg
 // esta funcion envia los ficheros a reproducir a la cola de reproducción en el FIFO1 /tmp/fifo1
 // secuencia /tmp/fifo1
 func (h *HLSPlay) secuenciador(file string, indexPlay int) error {
-
-	fw, err := os.OpenFile(fiforoot+"fifo1", os.O_WRONLY, 0666) /// |os.O_CREATE|os.O_APPEND (O_WRONLY|O_CREAT|O_TRUNC)
-	if err != nil {
-		Warning.Println(err)
-		return err
-	}
-	defer fw.Close()
-
+	/*
+		fw, err := os.OpenFile(fiforoot+"fifo1", os.O_WRONLY, 0666) /// |os.O_CREATE|os.O_APPEND (O_WRONLY|O_CREAT|O_TRUNC)
+		if err != nil {
+			Warning.Println(err)
+			return err
+		}
+		defer fw.Close()
+	*/
 	h.mu_play[indexPlay].Lock()
 
 	fr, err := os.Open(file) // read-only
@@ -539,7 +548,7 @@ func download(download, segname string, segdur float64) (int, bool) {
 	tiempo := time.Now().Unix()
 	go func() {
 		for {
-			if (time.Now().Unix() - tiempo) > int64(segdur) && downloading {
+			if (time.Now().Unix()-tiempo) > int64(segdur) && downloading {
 				exe.Stop()
 				////fmt.Println("[download] WGET matado supera los XXX segundos !!!!")
 				break
