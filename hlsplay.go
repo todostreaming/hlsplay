@@ -29,7 +29,7 @@ var (
 )
 
 func init() {
-	exec.Command("/bin/sh", "-c", "rm -f "+fiforoot+"fifo*").Run()
+/*	exec.Command("/bin/sh", "-c", "rm -f "+fiforoot+"fifo*").Run()
 	syscall.Mkfifo(fiforoot+"fifo1", 0666)
 	syscall.Mkfifo(fiforoot+"fifo2", 0666)
 	_, err := os.Stat(fiforoot + "fifo1")
@@ -40,7 +40,7 @@ func init() {
 	if err != nil {
 		log.Fatal("hlsplay-init() fifo2")
 	}
-	Warning = log.New(os.Stderr, "\n\n[WARNING]: ", log.Ldate|log.Ltime|log.Lshortfile)
+*/	Warning = log.New(os.Stderr, "\n\n[WARNING]: ", log.Ldate|log.Ltime|log.Lshortfile)
 }
 
 type Status struct {
@@ -116,7 +116,7 @@ func HLSPlayer(m3u8, downloaddir string, settings map[string]string) *HLSPlay {
 
 func (h *HLSPlay) Run() error {
 	var err error
-	ch := make(chan int)
+//	ch := make(chan int)
 
 	h.mu_seg.Lock()
 	if h.running { // ya esta corriendo
@@ -128,8 +128,12 @@ func (h *HLSPlay) Run() error {
 	h.running = true                                                   // comienza a correr
 	h.mu_seg.Unlock()
 
-	go h.command1(ch)
-	go h.command2(ch)
+				fw, err = os.OpenFile(fiforoot+"fifo1", os.O_WRONLY|os.O_TRUNC, 0666) /// |os.O_CREATE|os.O_APPEND (O_WRONLY|O_CREAT|O_TRUNC)
+				if err != nil {
+					Warning.Fatalln(err)
+				}
+//	go h.command1(ch)
+//	go h.command2(ch)
 	go h.m3u8parser()
 	go h.downloader() // bajando a su bola sin parar
 	go h.director()   // envia segmentos al secuenciador cuando s.playing && s.restamping
@@ -325,6 +329,7 @@ func (h *HLSPlay) command1(ch chan int) { // omxplayer
 					killall("omxplayer.bin")
 					h.exe.Stop()
 					fmt.Println("\nTimeout omxplayer !!!")
+					fmt.Fprintln(os.Stderr,"\nTimeout omxplayer !!!")
 					break
 				}
 				time.Sleep(1 * time.Second)
@@ -340,12 +345,13 @@ func (h *HLSPlay) command1(ch chan int) { // omxplayer
 				h.playing = false
 				h.mu_seg.Unlock()
 				fmt.Println("\nFin del omxplayer !!!")
+				fmt.Fprintln(os.Stderr,"\nFin del omxplayer !!!")
 				break
 			}
 			line = strings.TrimRight(line, "\n")
 			if strings.Contains(line, "Comenzando...") {
 				////fmt.Println("[omx]", "Ready...")
-				ch <- 1
+				ch <- 1 // enviamos mensaje de que omx esta listo para que ffmpeg arranque
 				h.mu_seg.Lock()
 				h.playing = true
 				h.mu_seg.Unlock()
@@ -398,12 +404,13 @@ func (h *HLSPlay) command2(ch chan int) { // ffmpeg
 					h.mu_seg.Unlock()
 					h.exe2.Stop()
 					fmt.Println("\nTimeout ffmpeg !!!")
+					fmt.Fprintln(os.Stderr,"\nTimeout ffmpeg !!!")
 					break
 				}
 				time.Sleep(1 * time.Second)
 			}
 		}()
-		<-ch
+		<-ch // omx ya esta listo, vamos a arrancar ffmpeg
 		h.exe2.Start()
 
 		for { // bucle de reproduccion normal
@@ -414,6 +421,7 @@ func (h *HLSPlay) command2(ch chan int) { // ffmpeg
 				h.mu_seg.Lock()
 				h.restamping = false
 				h.mu_seg.Unlock()
+				fmt.Fprintln(os.Stderr,"\nFin del ffmpeg !!!")
 				fmt.Println("\nFin del ffmpeg !!!")
 				break
 			}
@@ -449,14 +457,6 @@ func (h *HLSPlay) command2(ch chan int) { // ffmpeg
 // esta funcion envia los ficheros a reproducir a la cola de reproducción en el FIFO1 /tmp/fifo1
 // secuencia /tmp/fifo1
 func (h *HLSPlay) secuenciador(file string, indexPlay int) error {
-	/*
-		fw, err := os.OpenFile(fiforoot+"fifo1", os.O_WRONLY, 0666) /// |os.O_CREATE|os.O_APPEND (O_WRONLY|O_CREAT|O_TRUNC)
-		if err != nil {
-			Warning.Println(err)
-			return err
-		}
-		defer fw.Close()
-	*/
 	h.mu_play[indexPlay].Lock()
 
 	fr, err := os.Open(file) // read-only
@@ -464,15 +464,16 @@ func (h *HLSPlay) secuenciador(file string, indexPlay int) error {
 		Warning.Println(err)
 		return err
 	}
-	if _, err := io.Copy(fw, fr); err == nil {
-		////fmt.Printf("[secuenciador] (%s) Copiados %d bytes\n", file, n)
+	if _, err := io.Copy(fw, fr); err == nil { // possible issue when fw is closed
+		////fmt.Printf("[secuenciador] (%s) Copiados %d bytes\n", file, n) // copia perfecta sin fallos
 	} else {
-		Warning.Println(err) // no salimos en caso de error de copia
+		Warning.Println(err) // no salimos en caso de error de copia en algun momento
+		time.Sleep(3 * time.Second)
 	}
 	fr.Close()
 
 	h.mu_play[indexPlay].Unlock()
-	return nil
+	return err
 }
 
 func (h *HLSPlay) director() {
@@ -594,7 +595,7 @@ func download(download, segname string, segdur float64) (int, bool) {
 			downloadedok = false
 		}
 		if ns != 0 { // evitar un 0 divisor
-			kbps = int(filesize * 8.0 * 1e9 / ns / 1024.0)
+			kbps = int(filesize * 8.0 * 1e9 / ns / 1000.0)
 		}
 	}
 
