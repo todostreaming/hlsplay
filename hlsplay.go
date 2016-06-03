@@ -29,7 +29,7 @@ var (
 )
 
 func init() {
-/*	exec.Command("/bin/sh", "-c", "rm -f "+fiforoot+"fifo*").Run()
+	exec.Command("/bin/sh", "-c", "rm -f "+fiforoot+"fifo*").Run()
 	syscall.Mkfifo(fiforoot+"fifo1", 0666)
 	syscall.Mkfifo(fiforoot+"fifo2", 0666)
 	_, err := os.Stat(fiforoot + "fifo1")
@@ -40,7 +40,7 @@ func init() {
 	if err != nil {
 		log.Fatal("hlsplay-init() fifo2")
 	}
-*/	Warning = log.New(os.Stderr, "\n\n[WARNING]: ", log.Ldate|log.Ltime|log.Lshortfile)
+	Warning = log.New(os.Stderr, "\n\n[WARNING]: ", log.Ldate|log.Ltime|log.Lshortfile)
 }
 
 type Status struct {
@@ -50,6 +50,8 @@ type Status struct {
 	Numsegs int
 	Kbps    int    // download kbps speed
 	OMXStat string // log del omxplayer
+	OldBuf  float64
+	Buf     float64
 }
 
 type Segmento struct {
@@ -63,6 +65,7 @@ type HLSPlay struct {
 	exe2          *cmdline.Exec
 	mediawriter   *bufio.Writer     // por aqui puedo enviar caracteres al omxplayer
 	settings      map[string]string // read-only map
+	duration      []float64         // matrices de duracion en segundos de los segmentos play?.ts
 	downloaddir   string            // directorio RAMdisk donde se guardan los ficheros bajados del server y listos para reproducir
 	m3u8          string
 	playing       bool       // omxplayer esta reproduciendo
@@ -78,6 +81,7 @@ type HLSPlay struct {
 	lastPlay      int              // index del segmento que se envió al secuenciador desde el director
 	lastkbps      int              // download kbps speed
 	omxstat       string           // log del omxplayer
+	oldbuf, buf   float64          // buffer anterior y actual del omx
 	m3u8pls       *m3u8pls.M3U8pls // parser M3U8
 	cola          *cola.Cola       // cola con los segments/dur para bajar
 	mu_play       []sync.Mutex     // Mutex para la escritura/lectura de segmentos *.ts cíclicos
@@ -99,6 +103,8 @@ func HLSPlayer(m3u8, downloaddir string, settings map[string]string) *HLSPlay {
 	hls.lastIndex = 0
 	hls.lastPlay = 0
 	hls.lastkbps = 0
+	hls.oldbuf = 0.0
+	hls.buf = 0.0
 	hls.m3u8pls = m3u8pls.M3U8playlist(hls.m3u8)
 	hls.cola = cola.CreateQueue(queuetimeout)
 	hls.omxstat = ""
@@ -110,13 +116,14 @@ func HLSPlayer(m3u8, downloaddir string, settings map[string]string) *HLSPlay {
 	numsegs := (2 * toInt(ramdisk) / 15) - 4
 	hls.numsegs = int(numsegs)
 	hls.mu_play = make([]sync.Mutex, hls.numsegs) // segmentos de maximo 12 segundos a 5 Mbps
+	hls.duration = make([]float64, hls.numsegs)
 
 	return hls
 }
 
 func (h *HLSPlay) Run() error {
 	var err error
-//	ch := make(chan int)
+	//	ch := make(chan int)
 
 	h.mu_seg.Lock()
 	if h.running { // ya esta corriendo
@@ -128,12 +135,12 @@ func (h *HLSPlay) Run() error {
 	h.running = true                                                   // comienza a correr
 	h.mu_seg.Unlock()
 
-				fw, err = os.OpenFile(fiforoot+"fifo1", os.O_WRONLY|os.O_TRUNC, 0666) /// |os.O_CREATE|os.O_APPEND (O_WRONLY|O_CREAT|O_TRUNC)
-				if err != nil {
-					Warning.Fatalln(err)
-				}
-//	go h.command1(ch)
-//	go h.command2(ch)
+	fw, err = os.OpenFile(fiforoot+"fifo1", os.O_WRONLY|os.O_TRUNC, 0666) /// |os.O_CREATE|os.O_APPEND (O_WRONLY|O_CREAT|O_TRUNC)
+	if err != nil {
+		Warning.Fatalln(err)
+	}
+	//	go h.command1(ch)
+	//	go h.command2(ch)
 	go h.m3u8parser()
 	go h.downloader() // bajando a su bola sin parar
 	go h.director()   // envia segmentos al secuenciador cuando s.playing && s.restamping
@@ -159,7 +166,10 @@ func (h *HLSPlay) Stop() error {
 	h.lastIndex = 0
 	h.lastPlay = 0
 	h.lastkbps = 0
+	h.oldbuf = 0.0
+	h.buf = 0.0
 	h.cola = cola.CreateQueue(queuetimeout)
+	h.duration = make([]float64, h.numsegs)
 	h.omxstat = ""
 	killall("omxplayer.bin")
 	h.exe.Stop()
@@ -184,6 +194,8 @@ func (h *HLSPlay) Status() *Status {
 	st.Numsegs = h.numsegs
 	st.Kbps = h.lastkbps
 	st.OMXStat = h.omxstat
+	st.OldBuf = h.oldbuf
+	st.Buf = h.buf
 
 	return &st
 }
@@ -267,6 +279,9 @@ func (h *HLSPlay) downloader() {
 			started = false
 			// copiar numsegs veces el segmento download.ts
 			for i := 0; i < h.numsegs; i++ {
+				h.mu_seg.Lock()
+				h.duration[i] = segdur
+				h.mu_seg.Unlock()
 				cp := fmt.Sprintf("cp -f %sdownload.ts %splay%d.ts", h.downloaddir, h.downloaddir, i)
 				////fmt.Printf("[downloader] - 4 => %s\n",cp)
 				exec.Command("/bin/sh", "-c", cp).Run()
@@ -279,6 +294,7 @@ func (h *HLSPlay) downloader() {
 				h.lastIndex = 0
 			}
 			i := h.lastIndex
+			h.duration[i] = segdur
 			h.mu_seg.Unlock()
 
 			h.mu_play[i].Lock()
@@ -303,7 +319,7 @@ func (h *HLSPlay) command1(ch chan int) { // omxplayer
 		vol := toInt(h.settings["vol"])
 		// creamos el cmdomx
 		// /usr/bin/omxplayer -s -o both --vol 100 --hw --win '0 0 719 575' --no-osd -b /tmp/fifo2
-		h.cmdomx = fmt.Sprintf("/usr/bin/omxplayer -s -o both --vol %d --hw%s --layer 100 --no-osd -b --live --threshold 1.0 %sfifo2", 100*vol, overscan, fiforoot)
+		h.cmdomx = fmt.Sprintf("/usr/bin/omxplayer -s -o both --vol %d --hw%s --layer 100 --no-osd -b %sfifo2", 100*vol, overscan, fiforoot)
 		////fmt.Println(h.cmdomx)
 		h.exe = cmdline.Cmdline(h.cmdomx)
 		lectura, err := h.exe.StderrPipe()
@@ -329,7 +345,7 @@ func (h *HLSPlay) command1(ch chan int) { // omxplayer
 					killall("omxplayer.bin")
 					h.exe.Stop()
 					fmt.Println("\nTimeout omxplayer !!!")
-					fmt.Fprintln(os.Stderr,"\nTimeout omxplayer !!!")
+					fmt.Fprintln(os.Stderr, "\nTimeout omxplayer !!!")
 					break
 				}
 				time.Sleep(1 * time.Second)
@@ -345,7 +361,7 @@ func (h *HLSPlay) command1(ch chan int) { // omxplayer
 				h.playing = false
 				h.mu_seg.Unlock()
 				fmt.Println("\nFin del omxplayer !!!")
-				fmt.Fprintln(os.Stderr,"\nFin del omxplayer !!!")
+				fmt.Fprintln(os.Stderr, "\nFin del omxplayer !!!")
 				break
 			}
 			line = strings.TrimRight(line, "\n")
@@ -366,7 +382,15 @@ func (h *HLSPlay) command1(ch chan int) { // omxplayer
 			}
 			if strings.Contains(line, "Time:") {
 				////fmt.Printf("[omx] %s\n", line)
+				var hh, mm, ss, drops, cached, vol int
+				var playbuf float64
+
+				h.mu_seg.Lock()
+				h.oldbuf = h.buf
+				fmt.Sscanf(line, "Time: %d:%d:%d Drops: %d PlayBuf: %fs Cached: %dk Vol: %d dB", &hh, &mm, &ss, &drops, &playbuf, &cached, &vol)
+				h.buf = playbuf
 				h.omxstat = line
+				h.mu_seg.Unlock()
 			}
 			runtime.Gosched()
 		}
@@ -384,9 +408,8 @@ func (h *HLSPlay) command1(ch chan int) { // omxplayer
 }
 
 func (h *HLSPlay) command2(ch chan int) { // ffmpeg
-	var tiempo int64
 	for {
-		cmd2 := fmt.Sprintf("/usr/bin/ffmpeg -y -f mpegts -re -i %sfifo1 -f mpegts -acodec copy -vcodec copy %sfifo2", fiforoot, fiforoot)
+		cmd2 := fmt.Sprintf("/usr/bin/ffmpeg -y -f mpegts -i %sfifo1 -f mpegts -acodec copy -vcodec copy %sfifo2", fiforoot, fiforoot)
 		////fmt.Println(cmd2)
 		h.exe2 = cmdline.Cmdline(cmd2)
 		lectura, err := h.exe2.StderrPipe()
@@ -394,34 +417,17 @@ func (h *HLSPlay) command2(ch chan int) { // ffmpeg
 			Warning.Println(err)
 		}
 		mReader := bufio.NewReader(lectura)
-		tiempo = time.Now().Unix()
-		go func() {
-			for {
-				if (time.Now().Unix() - tiempo) > 5 {
-					h.mu_seg.Lock()
-					h.restamping = false
-					h.playing = false
-					h.mu_seg.Unlock()
-					h.exe2.Stop()
-					fmt.Println("\nTimeout ffmpeg !!!")
-					fmt.Fprintln(os.Stderr,"\nTimeout ffmpeg !!!")
-					break
-				}
-				time.Sleep(1 * time.Second)
-			}
-		}()
 		<-ch // omx ya esta listo, vamos a arrancar ffmpeg
 		h.exe2.Start()
 
 		for { // bucle de reproduccion normal
-			tiempo = time.Now().Unix()
 			line, err := mReader.ReadString('\n')
 			if err != nil {
 				fw.Close() // closes FIFO1
 				h.mu_seg.Lock()
 				h.restamping = false
 				h.mu_seg.Unlock()
-				fmt.Fprintln(os.Stderr,"\nFin del ffmpeg !!!")
+				fmt.Fprintln(os.Stderr, "\nFin del ffmpeg !!!")
 				fmt.Println("\nFin del ffmpeg !!!")
 				break
 			}
@@ -457,8 +463,8 @@ func (h *HLSPlay) command2(ch chan int) { // ffmpeg
 // esta funcion envia los ficheros a reproducir a la cola de reproducción en el FIFO1 /tmp/fifo1
 // secuencia /tmp/fifo1
 func (h *HLSPlay) secuenciador(file string, indexPlay int) error {
-	h.mu_play[indexPlay].Lock()
 
+	h.mu_play[indexPlay].Lock()
 	fr, err := os.Open(file) // read-only
 	if err != nil {
 		Warning.Println(err)
@@ -468,11 +474,10 @@ func (h *HLSPlay) secuenciador(file string, indexPlay int) error {
 		////fmt.Printf("[secuenciador] (%s) Copiados %d bytes\n", file, n) // copia perfecta sin fallos
 	} else {
 		Warning.Println(err) // no salimos en caso de error de copia en algun momento
-		time.Sleep(3 * time.Second)
 	}
 	fr.Close()
-
 	h.mu_play[indexPlay].Unlock()
+
 	return err
 }
 
@@ -481,7 +486,7 @@ func (h *HLSPlay) director() {
 	for {
 		if started {
 			started = false
-			time.Sleep(15 * time.Second)
+			time.Sleep(12 * time.Second)
 		}
 
 		h.mu_seg.Lock()
@@ -495,9 +500,9 @@ func (h *HLSPlay) director() {
 		file := fmt.Sprintf("%splay%d.ts", h.downloaddir, indexplay)
 		////fmt.Printf("[director] Play %s\n",file)
 		err := h.secuenciador(file, indexplay)
-		if err != nil {
+		if err != nil { // si pasa por aqui se supone que el FIFO1 esta muerto, y reintenta hasta que reviva cada segundo
 			Warning.Println(err)
-			runtime.Gosched()
+			time.Sleep(1 * time.Second)
 			continue
 		}
 
@@ -506,9 +511,17 @@ func (h *HLSPlay) director() {
 		if h.lastPlay >= h.numsegs {
 			h.lastPlay = 0
 		}
+		espera := time.Duration(h.duration[indexplay] * 1000.0 / 2.0)
 		h.mu_seg.Unlock()
 
-		runtime.Gosched()
+		time.Sleep(espera * time.Millisecond) // espera al tirar el tronco en milisegundos justo la mitad de la duracion del .ts
+		for {
+			if (h.oldbuf > h.buf) && (h.buf < 5.0) {
+				break
+			}
+			time.Sleep(100 * time.Millisecond) // esperamos 100 ms para revisar de nuevo la tendendia del playbuffer de omx
+		}
+
 	}
 }
 
