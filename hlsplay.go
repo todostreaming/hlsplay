@@ -123,7 +123,7 @@ func HLSPlayer(m3u8, downloaddir string, settings map[string]string) *HLSPlay {
 
 func (h *HLSPlay) Run() error {
 	var err error
-	//	ch := make(chan int)
+	ch := make(chan int)
 
 	h.mu_seg.Lock()
 	if h.running { // ya esta corriendo
@@ -139,8 +139,8 @@ func (h *HLSPlay) Run() error {
 	if err != nil {
 		Warning.Fatalln(err)
 	}
-	//	go h.command1(ch)
-	//	go h.command2(ch)
+	go h.command1(ch)
+	go h.command2(ch)
 	go h.m3u8parser()
 	go h.downloader() // bajando a su bola sin parar
 	go h.director()   // envia segmentos al secuenciador cuando s.playing && s.restamping
@@ -516,9 +516,12 @@ func (h *HLSPlay) director() {
 
 		time.Sleep(espera * time.Millisecond) // espera al tirar el tronco en milisegundos justo la mitad de la duracion del .ts
 		for {
-			if (h.oldbuf > h.buf) && (h.buf < 5.0) {
+			h.mu_seg.Lock()
+			if (h.oldbuf > h.buf) && (h.buf < 6.0) {
+				h.mu_seg.Unlock()
 				break
 			}
+			h.mu_seg.Unlock()
 			time.Sleep(100 * time.Millisecond) // esperamos 100 ms para revisar de nuevo la tendendia del playbuffer de omx
 		}
 
