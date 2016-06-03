@@ -284,7 +284,10 @@ func (h *HLSPlay) downloader() {
 				h.mu_seg.Unlock()
 				cp := fmt.Sprintf("cp -f %sdownload.ts %splay%d.ts", h.downloaddir, h.downloaddir, i)
 				////fmt.Printf("[downloader] - 4 => %s\n",cp)
+				h.mu_play[i].Lock()
 				exec.Command("/bin/sh", "-c", cp).Run()
+				syscall.Sync()
+				h.mu_play[i].Unlock()
 			}
 		} else {
 			// copiar solo una vez donde corresponde download.ts
@@ -297,13 +300,13 @@ func (h *HLSPlay) downloader() {
 			h.duration[i] = segdur
 			h.mu_seg.Unlock()
 
-			h.mu_play[i].Lock()
 			cp := fmt.Sprintf("cp -f %sdownload.ts %splay%d.ts", h.downloaddir, h.downloaddir, i)
 			////fmt.Printf("[downloader] - 5 => %s\n",cp)
+			h.mu_play[i].Lock()
 			exec.Command("/bin/sh", "-c", cp).Run()
+			syscall.Sync()
 			h.mu_play[i].Unlock()
 		}
-		syscall.Sync()
 		runtime.Gosched()
 	}
 }
