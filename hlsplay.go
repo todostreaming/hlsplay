@@ -20,7 +20,7 @@ import (
 
 const (
 	fiforoot     = "/var/segments/" // /tmp/
-	queuetimeout = 60               // creamos una cola con un timeout de 2 minutos = 120 secs
+	queuetimeout = 60               // creamos una cola con un timeout de 1 minuto = 60 secs
 )
 
 var (
@@ -135,10 +135,6 @@ func (h *HLSPlay) Run() error {
 	h.running = true                                                   // comienza a correr
 	h.mu_seg.Unlock()
 
-	fw, err = os.OpenFile(fiforoot+"fifo1", os.O_WRONLY|os.O_TRUNC, 0666) /// |os.O_CREATE|os.O_APPEND (O_WRONLY|O_CREAT|O_TRUNC)
-	if err != nil {
-		Warning.Fatalln(err)
-	}
 	go h.command1(ch)
 	go h.command2(ch)
 	go h.m3u8parser()
@@ -501,7 +497,7 @@ func (h *HLSPlay) director() {
 		h.mu_seg.Unlock()
 
 		file := fmt.Sprintf("%splay%d.ts", h.downloaddir, indexplay)
-		////fmt.Printf("[director] Play %s\n",file)
+		fmt.Printf("[director] Play %s\n",file)
 		err := h.secuenciador(file, indexplay)
 		if err != nil { // si pasa por aqui se supone que el FIFO1 esta muerto, y reintenta hasta que reviva cada segundo
 			Warning.Println(err)
@@ -514,19 +510,9 @@ func (h *HLSPlay) director() {
 		if h.lastPlay >= h.numsegs {
 			h.lastPlay = 0
 		}
-		espera := time.Duration(h.duration[indexplay] * 1000.0 / 2.0)
 		h.mu_seg.Unlock()
-
-		time.Sleep(espera * time.Millisecond) // espera al tirar el tronco en milisegundos justo la mitad de la duracion del .ts
-		for {
-			h.mu_seg.Lock()
-			if (h.oldbuf > h.buf) && (h.buf < 6.0) {
-				h.mu_seg.Unlock()
-				break
-			}
-			h.mu_seg.Unlock()
-			time.Sleep(100 * time.Millisecond) // esperamos 100 ms para revisar de nuevo la tendendia del playbuffer de omx
-		}
+		
+		runtime.Gosched()
 
 	}
 }
