@@ -79,7 +79,7 @@ func MPVPlayer(input, options string, timeout int64) *MPV {
 	return mpv
 }
 
-func (m *MPV) Start() error {
+func (m *MPV) run() error {
 	var err error
 	var exe *cmdline.Exec
 
@@ -150,6 +150,17 @@ func (m *MPV) Start() error {
 		}
 		m.mu.Unlock()
 	}
+
+	return err
+}
+
+func (m *MPV) Start() error {
+	var err error
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	go m.run()
 
 	return err
 }

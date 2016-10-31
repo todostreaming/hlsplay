@@ -14,7 +14,18 @@ func main() {
 		log.Fatalln("cannot start it")
 	}
 	for {
-		fmt.Printf("%s\n", rmx.Status().Log)
+		str := "=>"
+		if rmx.Status().Started {
+			str += " Started OK "
+		} else {
+			str += " Started NO "
+		}
+		if rmx.Status().Ready {
+			str += " Ready OK "
+		} else {
+			str += " Ready NO "
+		}
+		fmt.Println(str)
 		time.Sleep(1 * time.Second)
 	}
 }

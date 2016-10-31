@@ -69,7 +69,7 @@ func Remuxer(input, output string, timeout int64) *Remux {
 	return rmx
 }
 
-func (r *Remux) Start() error {
+func (r *Remux) run() error {
 	var err error
 	var exe *cmdline.Exec
 
@@ -142,6 +142,17 @@ func (r *Remux) Start() error {
 		}
 		r.mu.Unlock()
 	}
+
+	return err
+}
+
+func (r *Remux) Start() error {
+	var err error
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	go r.run()
 
 	return err
 }
