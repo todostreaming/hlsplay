@@ -71,7 +71,6 @@ func Remuxer(input, output string, timeout int64) *Remux {
 
 func (r *Remux) run() error {
 	var err error
-	var gofunc bool
 
 	r.mu.Lock()
 	r.started = true
@@ -85,28 +84,25 @@ func (r *Remux) run() error {
 			return err
 		}
 		mediareader := bufio.NewReader(stderrRead)
-		if gofunc == false {
-			go func() {
-				gofunc = true
-				for {
-					r.mu.Lock()
-					result := r.remuxing && (time.Now().Unix()-r.lastime) > r.timeout
-					result2 := r.resync
-					r.mu.Unlock()
-					if result || result2 {
-						exe.Stop()
-					}
-					time.Sleep(1 * time.Second)
-					r.mu.Lock()
-					if r.started == false {
-						r.mu.Unlock()
-						break
-					}
-					r.mu.Unlock()
+		go func() {
+			for {
+				r.mu.Lock()
+				result := r.remuxing && (time.Now().Unix()-r.lastime) > r.timeout
+				result2 := r.resync
+				r.mu.Unlock()
+				if result || result2 {
+					exe.Stop()
+					break
 				}
-				gofunc = false
-			}()
-		}
+				time.Sleep(100 * time.Millisecond)
+				r.mu.Lock()
+				if r.started == false {
+					r.mu.Unlock()
+					break
+				}
+				r.mu.Unlock()
+			}
+		}()
 		if err = exe.Start(); err != nil {
 			return err
 		}

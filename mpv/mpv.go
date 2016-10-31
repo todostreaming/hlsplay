@@ -81,7 +81,6 @@ func MPVPlayer(input, options string, timeout int64) *MPV {
 
 func (m *MPV) run() error {
 	var err error
-	var gofunc bool
 
 	m.mu.Lock()
 	m.started = true
@@ -95,27 +94,24 @@ func (m *MPV) run() error {
 			return err
 		}
 		mediareader := bufio.NewReader(stderrRead)
-		if gofunc == false {
-			go func() {
-				gofunc = true
-				for {
-					m.mu.Lock()
-					result := m.playing && (time.Now().Unix()-m.lastime) > m.timeout
-					m.mu.Unlock()
-					if result {
-						exe.Stop()
-					}
-					time.Sleep(1 * time.Second)
-					m.mu.Lock()
-					if m.started == false {
-						m.mu.Unlock()
-						break
-					}
-					m.mu.Unlock()
+		go func() {
+			for {
+				m.mu.Lock()
+				result := m.playing && (time.Now().Unix()-m.lastime) > m.timeout
+				m.mu.Unlock()
+				if result {
+					exe.Stop()
+					break
 				}
-				gofunc = false
-			}()
-		}
+				time.Sleep(100 * time.Millisecond)
+				m.mu.Lock()
+				if m.started == false {
+					m.mu.Unlock()
+					break
+				}
+				m.mu.Unlock()
+			}
+		}()
 		if err = exe.Start(); err != nil {
 			return err
 		}
