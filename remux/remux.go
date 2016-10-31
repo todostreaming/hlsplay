@@ -71,39 +71,38 @@ func Remuxer(input, output string, timeout int64) *Remux {
 
 func (r *Remux) run() error {
 	var err error
-	var exe *cmdline.Exec
 
 	r.mu.Lock()
 	r.started = true
 	r.mu.Unlock()
 	comando := fmt.Sprintf("/usr/bin/remux -i %s -c copy -f mpegts %s -y", r.input, r.output)
 
-	go func(rmx *Remux, cmd *cmdline.Exec) {
-		for {
-			rmx.mu.Lock()
-			result := rmx.remuxing && (time.Now().Unix()-rmx.lastime) > rmx.timeout
-			result2 := rmx.resync
-			rmx.mu.Unlock()
-			if result || result2 {
-				cmd.Stop()
-			}
-			time.Sleep(1 * time.Second)
-			rmx.mu.Lock()
-			if rmx.started == false {
-				rmx.mu.Unlock()
-				break
-			}
-			rmx.mu.Unlock()
-		}
-	}(r, exe)
-
 	for {
-		exe = cmdline.Cmdline(comando)
+		exe := cmdline.Cmdline(comando)
 		stderrRead, err := exe.StderrPipe()
 		if err != nil {
 			return err
 		}
 		mediareader := bufio.NewReader(stderrRead)
+		go func() {
+			for {
+				r.mu.Lock()
+				result := r.remuxing && (time.Now().Unix()-r.lastime) > r.timeout
+				result2 := r.resync
+				r.mu.Unlock()
+				if result || result2 {
+					exe.Stop()
+				}
+				time.Sleep(1 * time.Second)
+				r.mu.Lock()
+				if r.started == false {
+					r.mu.Unlock()
+					break
+				}
+				r.mu.Unlock()
+			}
+		}()
+
 		if err = exe.Start(); err != nil {
 			return err
 		}
