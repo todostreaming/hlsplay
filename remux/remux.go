@@ -22,6 +22,42 @@ type Remux struct {
 	log      string     // logging from remuxer
 	mu       sync.Mutex // mutex tu protect the internal variables on multithreads
 	// external config variables
-	input  string // input to remux (/var/segments/fifo)
-	output string // output remuxed	(/var/segments/fifo2)
+	input   string // input to remux (/var/segments/fifo)
+	output  string // output remuxed	(/var/segments/fifo2)
+	timeout int64  // timeout w/o log if remuxing (3 seconds)
+}
+
+// you dont need to call this func less than secondly
+func (r *Remux) Status() *Status {
+	var st Status
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	st.Lastime = r.lastime
+	st.Log = r.log
+	st.Ready = r.ready
+	st.Remuxing = r.remuxing
+	st.Started = r.started
+
+	return &st
+}
+
+func Remuxer(input, output string, timeout int64) *Remux {
+	rmx := &Remux{}
+	rmx.mu.Lock()
+	defer rmx.mu.Unlock()
+
+	// enter the external config variables
+	rmx.input = input
+	rmx.output = output
+	rmx.timeout = timeout
+	// initialize the internal variables values
+	rmx.started = false
+	rmx.ready = false
+	rmx.remuxing = false
+	rmx.lastime = 0
+	rmx.log = ""
+
+	return rmx
 }
