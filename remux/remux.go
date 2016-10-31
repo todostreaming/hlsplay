@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// remux -i /var/segments/fifo -c copy -f mpegts /var/segments/fifo2
+// remux -i /var/segments/fifo -c copy -f mpegts /var/segments/fifo2 -y
 type Status struct {
 	Started  bool   // Just called Start()=true or Stop()=false
 	Ready    bool   // Ready and waiting to receive data from HLSDownloader
@@ -76,7 +76,7 @@ func (r *Remux) Start() error {
 	r.mu.Lock()
 	r.started = true
 	r.mu.Unlock()
-	comando := fmt.Sprintf("/usr/bin/remux -i %s -c copy -f mpegts %s", r.input, r.output)
+	comando := fmt.Sprintf("/usr/bin/remux -i %s -c copy -f mpegts %s -y", r.input, r.output)
 
 	go func(rmx *Remux, cmd *cmdline.Exec) {
 		for {
