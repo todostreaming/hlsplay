@@ -1,7 +1,12 @@
 package remux
 
 import (
+	"bufio"
+	"fmt"
+	"github.com/isaacml/cmdline"
+	"strings"
 	"sync"
+	"time"
 )
 
 // remux -i /var/segments/fifo -c copy -f mpegts /var/segments/fifo2
@@ -60,4 +65,89 @@ func Remuxer(input, output string, timeout int64) *Remux {
 	rmx.log = ""
 
 	return rmx
+}
+
+func (r *Remux) Start() error {
+	var err error
+	var exe *cmdline.Exec
+
+	r.mu.Lock()
+	r.started = true
+	r.mu.Unlock()
+	comando := fmt.Sprintf("/usr/bin/remux -i %s -c copy -f mpegts %s", r.input, r.output)
+
+	go func(rmx *Remux, cmd *cmdline.Exec) {
+		for {
+			rmx.mu.Lock()
+			result := rmx.remuxing && (time.Now().Unix()-rmx.lastime) > rmx.timeout
+			rmx.mu.Unlock()
+			if result {
+				cmd.Stop()
+			}
+			time.Sleep(1 * time.Second)
+			rmx.mu.Lock()
+			if rmx.started == false {
+				rmx.mu.Unlock()
+				break
+			}
+			rmx.mu.Unlock()
+		}
+	}(r, exe)
+
+	for {
+		exe = cmdline.Cmdline(comando)
+		stderrRead, err := exe.StderrPipe()
+		if err != nil {
+			return err
+		}
+		mediareader := bufio.NewReader(stderrRead)
+		if err = exe.Start(); err != nil {
+			return err
+		}
+		for {
+			r.mu.Lock()
+			r.lastime = time.Now().Unix()
+			r.mu.Unlock()
+			line, err := mediareader.ReadString('\n') // blocks until read
+			r.mu.Lock()
+			if err != nil || r.started == false {
+				r.remuxing = false
+				r.ready = false
+				r.mu.Unlock()
+				break
+			}
+			r.mu.Unlock()
+			if strings.Contains(line, "libswresample") {
+				r.mu.Lock()
+				r.ready = true
+				r.mu.Unlock()
+			}
+			if strings.Contains(line, "frame=") {
+				r.mu.Lock()
+				r.remuxing = true
+				r.log = strings.TrimRight(line, "\n")
+				r.mu.Unlock()
+			}
+		}
+		exe.Stop()
+		r.mu.Lock()
+		if r.started == false {
+			r.mu.Unlock()
+			break
+		}
+		r.mu.Unlock()
+	}
+
+	return err
+}
+
+func (r *Remux) Stop() error {
+	var err error
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.started = false
+
+	return err
 }
