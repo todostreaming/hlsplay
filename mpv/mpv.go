@@ -132,6 +132,9 @@ func (m *MPV) run() error {
 			m.mu.Unlock()
 			if strings.Contains(line, "Playing:") {
 				m.mu.Lock()
+				m.playing = false
+				m.ready = false
+				m.log = ""
 				m.ready = true
 				m.mu.Unlock()
 			}
