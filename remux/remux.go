@@ -156,3 +156,14 @@ func (r *Remux) Stop() error {
 
 	return err
 }
+
+func (r *Remux) Resync() error {
+	var err error
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.resync = true
+
+	return err
+}
