@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// mpv --vo=rpi:background=yes --ao=alsa:device=[hw:0,0] --video-aspect 16:9 --loop=inf --vd-lavc-software-fallback=no  /avr/segments/fifo2
+// mpv --vo=rpi:background=yes --ao=alsa:device=[hw:0,0] --video-aspect 16:9 --loop=inf --vd-lavc-software-fallback=no  /var/segments/fifo2
 type Status struct {
 	Started bool    // Just called Start()=true or Stop()=false
 	Ready   bool    // Ready and waiting to receive data from the remuxer

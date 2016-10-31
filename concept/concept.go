@@ -2,30 +2,21 @@ package main
 
 import (
 	"fmt"
-	"github.com/todostreaming/hlsplay/remux"
+	"github.com/todostreaming/hlsplay/mpv"
 	"log"
 	"time"
 )
 
 func main() {
-	rmx := remux.Remuxer("/var/segments/fifo", "/var/segments/fifo2", 3)
-	err := rmx.Start()
+	player := mpv.MPVPlayer("/var/segments/fifo2", "--vo=rpi:background=yes --ao=alsa:device=[hw:0,0] --video-aspect 16:9 --loop=inf --vd-lavc-software-fallback=no", 3)
+	err := player.Start()
 	if err != nil {
 		log.Fatalln("cannot start it")
 	}
 	for {
-		str := "=>"
-		if rmx.Status().Started {
-			str += " Started OK "
-		} else {
-			str += " Started NO "
+		if player.Status().Playing {
+			fmt.Printf("A-V => %.2f\n", player.Status().AVsync)
 		}
-		if rmx.Status().Ready {
-			str += " Ready OK "
-		} else {
-			str += " Ready NO "
-		}
-		fmt.Println(str)
 		time.Sleep(1 * time.Second)
 	}
 }
