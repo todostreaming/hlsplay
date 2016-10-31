@@ -74,6 +74,7 @@ func MPVPlayer(input, options string, timeout int64) *MPV {
 	mpv.ready = false
 	mpv.playing = false
 	mpv.avsync = 0.0
+	mpv.log = ""
 
 	return mpv
 }
@@ -124,6 +125,7 @@ func (m *MPV) Start() error {
 			if err != nil || m.started == false {
 				m.playing = false
 				m.ready = false
+				m.log = ""
 				m.mu.Unlock()
 				break
 			}

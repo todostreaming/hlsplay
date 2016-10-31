@@ -26,6 +26,7 @@ type Remux struct {
 	lastime  int64      // last UNIX time a frame was remuxed
 	log      string     // logging from remuxer
 	mu       sync.Mutex // mutex tu protect the internal variables on multithreads
+	resync   bool       // resync just re-launching remux cmdline
 	// external config variables
 	input   string // input to remux (/var/segments/fifo)
 	output  string // output remuxed	(/var/segments/fifo2)
@@ -61,6 +62,7 @@ func Remuxer(input, output string, timeout int64) *Remux {
 	rmx.started = false
 	rmx.ready = false
 	rmx.remuxing = false
+	rmx.resync = false
 	rmx.lastime = 0
 	rmx.log = ""
 
@@ -80,8 +82,9 @@ func (r *Remux) Start() error {
 		for {
 			rmx.mu.Lock()
 			result := rmx.remuxing && (time.Now().Unix()-rmx.lastime) > rmx.timeout
+			result2 := rmx.resync
 			rmx.mu.Unlock()
-			if result {
+			if result || result2 {
 				cmd.Stop()
 			}
 			time.Sleep(1 * time.Second)
@@ -113,6 +116,8 @@ func (r *Remux) Start() error {
 			if err != nil || r.started == false {
 				r.remuxing = false
 				r.ready = false
+				r.resync = false
+				r.log = ""
 				r.mu.Unlock()
 				break
 			}
