@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"github.com/isaacml/cmdline"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -174,6 +175,23 @@ func (r *Remux) Resync() error {
 	defer r.mu.Unlock()
 
 	r.resync = true
+
+	return err
+}
+
+// call this func after Start()
+func (r *Remux) WaitforReady() error {
+	var err error
+
+	for {
+		r.mu.Lock()
+		ready := r.ready
+		r.mu.Unlock()
+		if ready {
+			break
+		}
+		runtime.Gosched()
+	}
 
 	return err
 }
