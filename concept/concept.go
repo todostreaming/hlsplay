@@ -26,17 +26,13 @@ func main() {
 	if err != nil {
 		log.Fatalln("cannot start the player")
 	}
-	for !player.Status().Ready {
-		time.Sleep(50 * time.Millisecond)
-	}
+	player.WaitforReady()
 	fmt.Println("MPV Started")
 	err = rmx.Start()
 	if err != nil {
 		log.Fatalln("cannot start remuxer")
 	}
-	for !rmx.Status().Ready {
-		time.Sleep(50 * time.Millisecond)
-	}
+	rmx.WaitforReady()
 	fmt.Println("Remux Started")
 	err = hls.Run()
 	if err != nil {
@@ -45,6 +41,7 @@ func main() {
 	fmt.Println("Starting Download...")
 	done := false
 	var t time.Time
+	count := 0
 	for {
 		if !done {
 			t = time.Now()
@@ -55,14 +52,33 @@ func main() {
 		}
 		time.Sleep(1 * time.Second)
 		if time.Since(t).Seconds() > 60.0 {
+			count++
 			done = false
 			player.PreStop()
 			rmx.PreStop()
 			hls.Pause()
+			fmt.Println("Pausing Download...")
 			hls.WaitforPaused()
-			fmt.Println("FIFO Empty !!!")
-			time.Sleep(1 * time.Minute)
-			break
+			player.Stop()
+			rmx.Stop()
+			player.WaitforStopped()
+			rmx.WaitforStopped()
+			fmt.Printf("FIFO Empty [%d]!!!\n", count)
+
+			err := player.Start()
+			if err != nil {
+				log.Fatalln("cannot start the player")
+			}
+			player.WaitforReady()
+			fmt.Println("MPV Started")
+			err = rmx.Start()
+			if err != nil {
+				log.Fatalln("cannot start remuxer")
+			}
+			rmx.WaitforReady()
+			fmt.Println("Remux Started")
+			hls.Resume()
+			fmt.Println("Resume Download...")
 		}
 	}
 }

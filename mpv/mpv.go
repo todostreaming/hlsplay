@@ -203,3 +203,20 @@ func (m *MPV) WaitforStopped() error {
 
 	return err
 }
+
+// call this func after Start()
+func (m *MPV) WaitforReady() error {
+	var err error
+
+	for {
+		m.mu.Lock()
+		ready := m.ready
+		m.mu.Unlock()
+		if ready {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	return err
+}

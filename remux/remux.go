@@ -187,3 +187,20 @@ func (r *Remux) WaitforStopped() error {
 
 	return err
 }
+
+// call this func after Start()
+func (r *Remux) WaitforReady() error {
+	var err error
+
+	for {
+		r.mu.Lock()
+		ready := r.ready
+		r.mu.Unlock()
+		if ready {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	return err
+}
