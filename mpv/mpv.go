@@ -21,18 +21,18 @@ type Status struct {
 
 type MPV struct {
 	// internal status variables
-	started bool       // Just called Start()=true or Stop()=false
-	stop    bool       // order to stop
-	ready   bool       // Ready and waiting to receive data from the remuxer
-	playing bool       // playing & displaying frames at this moment
-	avsync  float64    // DTS difference between Audio and Video packets
-	log     string     // log output
-	mu      sync.Mutex // mutex tu protect the internal variables on multithreads
-	lastime int64      // last UNIX time a frame was played
+	started bool          // Just called Start()=true or Stop()=false
+	stop    bool          // order to stop
+	ready   bool          // Ready and waiting to receive data from the remuxer
+	playing bool          // playing & displaying frames at this moment
+	avsync  float64       // DTS difference between Audio and Video packets
+	log     string        // log output
+	mu      sync.Mutex    // mutex tu protect the internal variables on multithreads
+	writer  *bufio.Writer // write to the cmdline stdin
+	lastime int64         // last UNIX time a frame was played
 	// external config variables
 	input   string // input to remux (/var/segments/fifo)
 	options string // conformed options string (--vo=rpi:background=yes --ao=alsa:device=[hw:0,0] --loop=inf --vd-lavc-software-fallback=no)
-	timeout int64  // timeout w/o log if playing (3 seconds)
 }
 
 // you dont need to call this func less than secondly
@@ -63,7 +63,7 @@ func (m *MPV) Status() *Status {
 	return &st
 }
 
-func MPVPlayer(input, options string, timeout int64) *MPV {
+func MPVPlayer(input, options string) *MPV {
 	mpv := &MPV{}
 	mpv.mu.Lock()
 	defer mpv.mu.Unlock()
@@ -71,7 +71,6 @@ func MPVPlayer(input, options string, timeout int64) *MPV {
 	// enter the external config variables
 	mpv.input = input
 	mpv.options = options
-	mpv.timeout = timeout
 	// initialize the internal variables values
 	mpv.started = false
 	mpv.ready = false
@@ -98,6 +97,11 @@ func (m *MPV) run() error {
 			return err
 		}
 		mediareader := bufio.NewReader(stderrRead)
+		stdinWrite, err := exe.StdinPipe()
+		if err != nil {
+			return err
+		}
+		m.writer = bufio.NewWriter(stdinWrite)
 		if err = exe.Start(); err != nil {
 			return err
 		}
@@ -107,7 +111,7 @@ func (m *MPV) run() error {
 			m.mu.Unlock()
 			line, err := mediareader.ReadString('\n') // blocks until read
 			m.mu.Lock()
-			if err != nil || m.stop {
+			if err != nil {
 				m.playing = false
 				m.ready = false
 				m.log = ""
@@ -129,7 +133,7 @@ func (m *MPV) run() error {
 				m.mu.Unlock()
 			}
 		}
-		exe.Stop()
+		exe.Wait()
 		m.mu.Lock()
 		if m.stop {
 			m.mu.Unlock()
@@ -153,13 +157,32 @@ func (m *MPV) Start() error {
 	return err
 }
 
+// prepara a MPV para ser parado externamente por completo
+func (m *MPV) PreStop() error {
+	var err error
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.playing {
+		m.stop = true
+	}
+
+	return err
+}
+
+// para completamente al MPV internamente
 func (m *MPV) Stop() error {
 	var err error
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.stop = true
+	if m.playing {
+		m.stop = true
+		m.writer.WriteByte('q')
+		m.writer.Flush()
+	}
 
 	return err
 }

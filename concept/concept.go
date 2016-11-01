@@ -7,7 +7,6 @@ import (
 	"github.com/todostreaming/hlsplay/remux"
 	"log"
 	"os"
-	//	"os/exec"
 	"time"
 )
 
@@ -20,19 +19,25 @@ func init() {
 // mpv --vo=rpi:background=yes --ao=alsa:device=[hw:0,0] --video-aspect 16:9 --loop=inf --vd-lavc-software-fallback=no /var/segments/fifo2
 func main() {
 	hls := hlsdownload.HLSDownloader("http://pablo001.todostreaming.es/radiovida/mobile/playlist.m3u8", "/var/segments/")
-	player := mpv.MPVPlayer("/var/segments/fifo2", "--vo=rpi:background=yes --ao=alsa:device=[hw:0,0] --video-aspect 16:9 --vd-lavc-software-fallback=no", 3)
-	rmx := remux.Remuxer("/var/segments/fifo", "/var/segments/fifo2", 3)
+	player := mpv.MPVPlayer("/var/segments/fifo2", "--vo=rpi:background=yes --ao=alsa:device=[hw:0,0] --video-aspect 16:9 --vd-lavc-software-fallback=no")
+	rmx := remux.Remuxer("/var/segments/fifo", "/var/segments/fifo2")
 
-	err := rmx.Start()
-	if err != nil {
-		log.Fatalln("cannot start remuxer")
-	}
-	fmt.Println("Remuxer launched...")
-	err = player.Start()
+	err := player.Start()
 	if err != nil {
 		log.Fatalln("cannot start the player")
 	}
-	fmt.Println("MPV launched...")
+	for !player.Status().Ready {
+		time.Sleep(50 * time.Millisecond)
+	}
+	fmt.Println("MPV Started")
+	err = rmx.Start()
+	if err != nil {
+		log.Fatalln("cannot start remuxer")
+	}
+	for !rmx.Status().Ready {
+		time.Sleep(50 * time.Millisecond)
+	}
+	fmt.Println("Remux Started")
 	err = hls.Run()
 	if err != nil {
 		log.Fatalln("cannot start the downloader")
@@ -51,15 +56,15 @@ func main() {
 		time.Sleep(1 * time.Second)
 		if time.Since(t).Seconds() > 60.0 {
 			done = false
+			player.PreStop()
+			rmx.PreStop()
 			hls.Pause()
 			hls.WaitforPaused()
-			rmx.Stop()
-			player.Stop()
-			Warning.Println("remux resynced")
-			time.Sleep(2 * time.Second)
-			rmx.Start()
-			player.Start()
-			hls.Resume()
+			fmt.Println("FIFO Empty !!!")
+			time.Sleep(1 * time.Minute)
+			break
 		}
 	}
 }
+
+// Could not get DISPMANX objects  (mpv)

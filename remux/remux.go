@@ -20,17 +20,17 @@ type Status struct {
 
 type Remux struct {
 	// internal status variables
-	started  bool       // Just called Start()=true or Stop()=false
-	stop     bool       // order to stop
-	ready    bool       // Ready and waiting to receive data from HLSDownloader
-	remuxing bool       // remuxing frames at this moment
-	lastime  int64      // last UNIX time a frame was remuxed
-	log      string     // logging from remuxer
-	mu       sync.Mutex // mutex tu protect the internal variables on multithreads
+	started  bool          // Just called Start()=true or Stop()=false
+	stop     bool          // order to stop
+	ready    bool          // Ready and waiting to receive data from HLSDownloader
+	remuxing bool          // remuxing frames at this moment
+	lastime  int64         // last UNIX time a frame was remuxed
+	log      string        // logging from remuxer
+	mu       sync.Mutex    // mutex tu protect the internal variables on multithreads
+	writer   *bufio.Writer // write to the cmdline stdin
 	// external config variables
-	input   string // input to remux (/var/segments/fifo)
-	output  string // output remuxed	(/var/segments/fifo2)
-	timeout int64  // timeout w/o log if remuxing (3 seconds)
+	input  string // input to remux (/var/segments/fifo)
+	output string // output remuxed	(/var/segments/fifo2)
 }
 
 // you dont need to call this func less than secondly
@@ -49,7 +49,7 @@ func (r *Remux) Status() *Status {
 	return &st
 }
 
-func Remuxer(input, output string, timeout int64) *Remux {
+func Remuxer(input, output string) *Remux {
 	rmx := &Remux{}
 	rmx.mu.Lock()
 	defer rmx.mu.Unlock()
@@ -57,7 +57,6 @@ func Remuxer(input, output string, timeout int64) *Remux {
 	// enter the external config variables
 	rmx.input = input
 	rmx.output = output
-	rmx.timeout = timeout
 	// initialize the internal variables values
 	rmx.started = false
 	rmx.ready = false
@@ -84,6 +83,11 @@ func (r *Remux) run() error {
 			return err
 		}
 		mediareader := bufio.NewReader(stderrRead)
+		stdinWrite, err := exe.StdinPipe()
+		if err != nil {
+			return err
+		}
+		r.writer = bufio.NewWriter(stdinWrite)
 		if err = exe.Start(); err != nil {
 			return err
 		}
@@ -93,7 +97,7 @@ func (r *Remux) run() error {
 			r.mu.Unlock()
 			line, err := mediareader.ReadString('\n') // blocks until read
 			r.mu.Lock()
-			if err != nil || r.stop {
+			if err != nil {
 				r.remuxing = false
 				r.ready = false
 				r.log = ""
@@ -137,13 +141,32 @@ func (r *Remux) Start() error {
 	return err
 }
 
+// prepara a Remux para ser parado externamente por completo
+func (r *Remux) PreStop() error {
+	var err error
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.remuxing {
+		r.stop = true
+	}
+
+	return err
+}
+
+// para completamente al Remux internamente
 func (r *Remux) Stop() error {
 	var err error
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	r.stop = true
+	if r.remuxing {
+		r.stop = true
+		r.writer.WriteByte('q')
+		r.writer.Flush()
+	}
 
 	return err
 }
