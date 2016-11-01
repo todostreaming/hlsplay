@@ -19,26 +19,48 @@ func main() {
 	if err != nil {
 		log.Fatalln("cannot start remuxer")
 	}
-	rmx.WaitforReady()
-	fmt.Println("Remuxer ready...")
+	fmt.Println("Remuxer launched...")
 	err = player.Start()
 	if err != nil {
 		log.Fatalln("cannot start the player")
 	}
-	fmt.Println("MPV ready...")
+	fmt.Println("MPV launched...")
 	err = hls.Run()
 	if err != nil {
 		log.Fatalln("cannot start the downloader")
 	}
 	fmt.Println("Starting Download...")
+	t := time.Now()
+	for {
+		if rmx.Status().Remuxing {
+			fmt.Printf("%s A-V=%.3f\n", rmx.Status().Log, player.Status().AVsync)
+		}
+		time.Sleep(1 * time.Second)
+		if time.Since(t).Seconds() > 60.0 {
+			break
+		}
+	}
+	hls.Pause()
+	fmt.Println("Pausing Download...")
+	hls.WaitforPaused()
+	fmt.Println("Download paused")
+	rmx.Stop()
+	fmt.Println("Remuxer stopped")
+	player.Stop()
+	fmt.Println("Player stopped")
+	time.Sleep(1 * time.Minute)
+	fmt.Println("Waiting for 1 minute...")
+	rmx.Start()
+	fmt.Println("Remuxer launched...")
+	player.Start()
+	fmt.Println("Player launched...")
+	time.Sleep(1 * time.Second)
+	hls.Resume()
+	fmt.Println("Secuencer resumed")
 	for {
 		if rmx.Status().Remuxing {
 			fmt.Printf("%s A-V=%.3f\n", rmx.Status().Log, player.Status().AVsync)
 		}
 		time.Sleep(1 * time.Second)
 	}
-	hls.Pause()
-	hls.WaitforPaused()
-	rmx.Stop()
-	player.Stop()
 }

@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"github.com/isaacml/cmdline"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -174,23 +173,6 @@ func (m *MPV) Stop() error {
 	defer m.mu.Unlock()
 
 	m.started = false
-
-	return err
-}
-
-// call this func after Start()
-func (m *MPV) WaitforReady() error {
-	var err error
-
-	for {
-		m.mu.Lock()
-		ready := m.ready
-		m.mu.Unlock()
-		if ready {
-			break
-		}
-		runtime.Gosched()
-	}
 
 	return err
 }
