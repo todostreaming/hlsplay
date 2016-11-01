@@ -16,6 +16,7 @@ type Status struct {
 	Ready   bool    // Ready and waiting to receive data from the remuxer
 	Playing bool    // playing frames at this moment
 	AVsync  float64 // DTS difference between Audio and Video packets
+	Lastime int64   // last UNIX time a frame was displayed
 }
 
 type MPV struct {
@@ -56,6 +57,7 @@ func (m *MPV) Status() *Status {
 	st.Playing = m.playing
 	st.Ready = m.ready
 	st.Started = m.started
+	st.Lastime = m.lastime
 
 	return &st
 }
@@ -94,24 +96,6 @@ func (m *MPV) run() error {
 			return err
 		}
 		mediareader := bufio.NewReader(stderrRead)
-		go func() {
-			for {
-				m.mu.Lock()
-				result := m.playing && (time.Now().Unix()-m.lastime) > m.timeout
-				m.mu.Unlock()
-				if result {
-					exe.SigKill()
-					break
-				}
-				time.Sleep(100 * time.Millisecond)
-				m.mu.Lock()
-				if m.started == false {
-					m.mu.Unlock()
-					break
-				}
-				m.mu.Unlock()
-			}
-		}()
 		if err = exe.Start(); err != nil {
 			return err
 		}

@@ -26,7 +26,6 @@ type Remux struct {
 	lastime  int64      // last UNIX time a frame was remuxed
 	log      string     // logging from remuxer
 	mu       sync.Mutex // mutex tu protect the internal variables on multithreads
-	resync   bool       // resync just re-launching remux cmdline
 	// external config variables
 	input   string // input to remux (/var/segments/fifo)
 	output  string // output remuxed	(/var/segments/fifo2)
@@ -62,7 +61,6 @@ func Remuxer(input, output string, timeout int64) *Remux {
 	rmx.started = false
 	rmx.ready = false
 	rmx.remuxing = false
-	rmx.resync = false
 	rmx.lastime = 0
 	rmx.log = ""
 
@@ -84,25 +82,6 @@ func (r *Remux) run() error {
 			return err
 		}
 		mediareader := bufio.NewReader(stderrRead)
-		go func() {
-			for {
-				r.mu.Lock()
-				result := r.remuxing && (time.Now().Unix()-r.lastime) > r.timeout
-				result2 := r.resync
-				r.mu.Unlock()
-				if result || result2 {
-					exe.SigKill()
-					break
-				}
-				time.Sleep(100 * time.Millisecond)
-				r.mu.Lock()
-				if r.started == false {
-					r.mu.Unlock()
-					break
-				}
-				r.mu.Unlock()
-			}
-		}()
 		if err = exe.Start(); err != nil {
 			return err
 		}
@@ -115,7 +94,6 @@ func (r *Remux) run() error {
 			if err != nil || r.started == false {
 				r.remuxing = false
 				r.ready = false
-				r.resync = false
 				r.log = ""
 				r.mu.Unlock()
 				break
@@ -163,17 +141,6 @@ func (r *Remux) Stop() error {
 	defer r.mu.Unlock()
 
 	r.started = false
-
-	return err
-}
-
-func (r *Remux) Resync() error {
-	var err error
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	r.resync = true
 
 	return err
 }
