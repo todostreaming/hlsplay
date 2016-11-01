@@ -130,7 +130,7 @@ func (r *Remux) run() error {
 			if strings.Contains(line, "frame=") {
 				r.mu.Lock()
 				r.remuxing = true
-				r.log = strings.TrimRight(line, "\n")
+				r.log = strings.TrimSpace(line)
 				r.mu.Unlock()
 			}
 		}

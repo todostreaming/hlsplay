@@ -25,7 +25,6 @@ func main() {
 	if err != nil {
 		log.Fatalln("cannot start the player")
 	}
-	player.WaitforReady()
 	fmt.Println("MPV ready...")
 	err = hls.Run()
 	if err != nil {
