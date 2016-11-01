@@ -20,20 +20,26 @@ func main() {
 		log.Fatalln("cannot start remuxer")
 	}
 	rmx.WaitforReady()
+	fmt.Println("Remuxer ready...")
 	err = player.Start()
 	if err != nil {
 		log.Fatalln("cannot start the player")
 	}
 	player.WaitforReady()
+	fmt.Println("MPV ready...")
 	err = hls.Run()
-
 	if err != nil {
 		log.Fatalln("cannot start the downloader")
 	}
+	fmt.Println("Starting Download...")
 	for {
 		if rmx.Status().Remuxing {
 			fmt.Printf("%s A-V=%.3f\n", rmx.Status().Log, player.Status().AVsync)
 		}
 		time.Sleep(1 * time.Second)
 	}
+	hls.Pause()
+	hls.WaitforPaused()
+	rmx.Stop()
+	player.Stop()
 }
