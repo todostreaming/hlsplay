@@ -21,6 +21,7 @@ type Status struct {
 type Remux struct {
 	// internal status variables
 	started  bool       // Just called Start()=true or Stop()=false
+	stop     bool       // order to stop
 	ready    bool       // Ready and waiting to receive data from HLSDownloader
 	remuxing bool       // remuxing frames at this moment
 	lastime  int64      // last UNIX time a frame was remuxed
@@ -62,6 +63,7 @@ func Remuxer(input, output string, timeout int64) *Remux {
 	rmx.ready = false
 	rmx.remuxing = false
 	rmx.lastime = 0
+	rmx.stop = false
 	rmx.log = ""
 
 	return rmx
@@ -91,7 +93,7 @@ func (r *Remux) run() error {
 			r.mu.Unlock()
 			line, err := mediareader.ReadString('\n') // blocks until read
 			r.mu.Lock()
-			if err != nil || r.started == false {
+			if err != nil || r.stop {
 				r.remuxing = false
 				r.ready = false
 				r.log = ""
@@ -113,21 +115,22 @@ func (r *Remux) run() error {
 		}
 		exe.Stop()
 		r.mu.Lock()
-		if r.started == false {
+		if r.stop {
 			r.mu.Unlock()
 			break
 		}
 		r.mu.Unlock()
 	}
+	r.mu.Lock()
+	r.started = false
+	r.stop = false
+	r.mu.Unlock()
 
 	return err
 }
 
 func (r *Remux) Start() error {
 	var err error
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
 
 	go r.run()
 
@@ -140,7 +143,24 @@ func (r *Remux) Stop() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	r.started = false
+	r.stop = true
+
+	return err
+}
+
+// call this func after Stop() before to re-Start()
+func (r *Remux) WaitforStopped() error {
+	var err error
+
+	for {
+		r.mu.Lock()
+		stopped := r.started
+		r.mu.Unlock()
+		if stopped == false {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 
 	return err
 }

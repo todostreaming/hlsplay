@@ -22,6 +22,7 @@ type Status struct {
 type MPV struct {
 	// internal status variables
 	started bool       // Just called Start()=true or Stop()=false
+	stop    bool       // order to stop
 	ready   bool       // Ready and waiting to receive data from the remuxer
 	playing bool       // playing & displaying frames at this moment
 	avsync  float64    // DTS difference between Audio and Video packets
@@ -76,6 +77,7 @@ func MPVPlayer(input, options string, timeout int64) *MPV {
 	mpv.ready = false
 	mpv.playing = false
 	mpv.avsync = 0.0
+	mpv.stop = false
 	mpv.log = ""
 
 	return mpv
@@ -105,7 +107,7 @@ func (m *MPV) run() error {
 			m.mu.Unlock()
 			line, err := mediareader.ReadString('\n') // blocks until read
 			m.mu.Lock()
-			if err != nil || m.started == false {
+			if err != nil || m.stop {
 				m.playing = false
 				m.ready = false
 				m.log = ""
@@ -129,21 +131,22 @@ func (m *MPV) run() error {
 		}
 		exe.Stop()
 		m.mu.Lock()
-		if m.started == false {
+		if m.stop {
 			m.mu.Unlock()
 			break
 		}
 		m.mu.Unlock()
 	}
+	m.mu.Lock()
+	m.started = false
+	m.stop = false
+	m.mu.Unlock()
 
 	return err
 }
 
 func (m *MPV) Start() error {
 	var err error
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	go m.run()
 
@@ -156,7 +159,24 @@ func (m *MPV) Stop() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.started = false
+	m.stop = true
+
+	return err
+}
+
+// call this func after Stop() before to re-Start()
+func (m *MPV) WaitforStopped() error {
+	var err error
+
+	for {
+		m.mu.Lock()
+		stopped := m.started
+		m.mu.Unlock()
+		if stopped == false {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 
 	return err
 }
