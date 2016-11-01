@@ -91,7 +91,7 @@ func (r *Remux) run() error {
 				result2 := r.resync
 				r.mu.Unlock()
 				if result || result2 {
-					exe.Stop()
+					exe.SigKill()
 					break
 				}
 				time.Sleep(100 * time.Millisecond)

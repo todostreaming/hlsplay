@@ -100,7 +100,7 @@ func (m *MPV) run() error {
 				result := m.playing && (time.Now().Unix()-m.lastime) > m.timeout
 				m.mu.Unlock()
 				if result {
-					exe.Stop()
+					exe.SigKill()
 					break
 				}
 				time.Sleep(100 * time.Millisecond)
