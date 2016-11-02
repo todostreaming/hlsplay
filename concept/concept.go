@@ -17,10 +17,10 @@ func init() {
 	Warning = log.New(os.Stderr, "\n\n[WARNING]: ", log.Ldate|log.Ltime|log.Lshortfile)
 }
 
-// mpv --vo=rpi:background=yes --ao=alsa:device=[hw:0,0] --video-aspect 16:9 --loop=inf --vd-lavc-software-fallback=no /var/segments/fifo2
+// mpv --vo=opengl --rpi-layer=0 --rpi-background=yes --audio-device=alsa/plughw:0,0 --video-aspect 16:9 --vd-lavc-software-fallback=no --deinterlace=yes /var/segments/fifo2
 func main() {
 	hls := hlsdownload.HLSDownloader("http://pablo001.todostreaming.es/radiovida/mobile/playlist.m3u8", "/var/segments/")
-	player := mpv.MPVPlayer("/var/segments/fifo2", "--vo=rpi:background=yes --ao=alsa:device=[hw:0,0] --video-aspect 16:9 --vd-lavc-software-fallback=no")
+	player := mpv.MPVPlayer("/var/segments/fifo2", "--vo=opengl --rpi-layer=0 --rpi-background=yes --audio-device=alsa/plughw:0,0 --video-aspect 16:9 --vd-lavc-software-fallback=no")
 	rmx := remux.Remuxer("/var/segments/fifo", "/var/segments/fifo2")
 
 	err := player.Start()
