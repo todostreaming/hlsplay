@@ -136,6 +136,12 @@ func (r *Remux) run() error {
 func (r *Remux) Start() error {
 	var err error
 
+	r.mu.Lock()
+	if r.started {
+		defer r.mu.Unlock()
+		return fmt.Errorf("remux: ALREADY_RUNNING_ERROR")
+	}
+	r.mu.Unlock()
 	go r.run()
 
 	return err
@@ -166,6 +172,8 @@ func (r *Remux) Stop() error {
 		r.stop = true
 		r.writer.WriteByte('q')
 		r.writer.Flush()
+	} else {
+		return fmt.Errorf("remux: NOT_STOP_AVAIL")
 	}
 
 	return err

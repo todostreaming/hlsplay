@@ -152,6 +152,12 @@ func (m *MPV) run() error {
 func (m *MPV) Start() error {
 	var err error
 
+	m.mu.Lock()
+	if m.started {
+		defer m.mu.Unlock()
+		return fmt.Errorf("mpv: ALREADY_RUNNING_ERROR")
+	}
+	m.mu.Unlock()
 	go m.run()
 
 	return err
@@ -182,6 +188,8 @@ func (m *MPV) Stop() error {
 		m.stop = true
 		m.writer.WriteByte('q')
 		m.writer.Flush()
+	} else {
+		return fmt.Errorf("remux: NOT_STOP_AVAIL")
 	}
 
 	return err
