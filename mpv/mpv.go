@@ -17,6 +17,7 @@ type Status struct {
 	Playing bool    // playing frames at this moment
 	AVsync  float64 // DTS difference between Audio and Video packets
 	Lastime int64   // last UNIX time a frame was displayed
+	HwIssue bool    // Hw issue (no DISPMANX)
 }
 
 type MPV struct {
@@ -30,6 +31,7 @@ type MPV struct {
 	mu      sync.Mutex    // mutex tu protect the internal variables on multithreads
 	writer  *bufio.Writer // write to the cmdline stdin
 	lastime int64         // last UNIX time a frame was played
+	hwissue bool          // Hw issue (no DISPMANX)
 	// external config variables
 	input   string // input to remux (/var/segments/fifo)
 	options string // conformed options string (--vo=rpi:background=yes --ao=alsa:device=[hw:0,0] --loop=inf --vd-lavc-software-fallback=no)
@@ -59,6 +61,7 @@ func (m *MPV) Status() *Status {
 	st.Ready = m.ready
 	st.Started = m.started
 	st.Lastime = m.lastime
+	st.HwIssue = m.hwissue
 
 	return &st
 }
@@ -78,6 +81,7 @@ func MPVPlayer(input, options string) *MPV {
 	mpv.avsync = 0.0
 	mpv.stop = false
 	mpv.log = ""
+	mpv.hwissue = false
 
 	return mpv
 }
@@ -119,6 +123,11 @@ func (m *MPV) run() error {
 				break
 			}
 			m.mu.Unlock()
+			if strings.Contains(line, "not get DISPMANX") {
+				m.mu.Lock()
+				m.hwissue = true
+				m.mu.Unlock()
+			}
 			if strings.Contains(line, "Playing:") {
 				m.mu.Lock()
 				m.playing = false
