@@ -7,6 +7,7 @@ import (
 	"github.com/todostreaming/hlsplay/remux"
 	"log"
 	"os"
+	"runtime"
 	"time"
 )
 
@@ -58,12 +59,14 @@ func main() {
 			rmx.PreStop()
 			hls.Pause()
 			fmt.Println("Pausing Download...")
-			hls.WaitforPaused()
+			hls.WaitforPaused() // blocks until completely paused
+			fmt.Println("Stop player and Remuxer")
 			player.Stop()
 			rmx.Stop()
-			player.WaitforStopped()
+			fmt.Println("Waiting Stop player and Remuxer...")
+			player.WaitforStopped() // blocks until stopped
 			rmx.WaitforStopped()
-			fmt.Printf("FIFO Empty [%d]!!!\n", count)
+			fmt.Printf("FIFO Empty [%d] Goroutines = %d!!!\n", count, runtime.NumGoroutine())
 
 			err := player.Start()
 			if err != nil {

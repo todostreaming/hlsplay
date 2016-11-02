@@ -154,9 +154,7 @@ func (r *Remux) PreStop() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if r.remuxing {
-		r.stop = true
-	}
+	r.stop = true
 
 	return err
 }

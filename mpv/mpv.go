@@ -170,9 +170,7 @@ func (m *MPV) PreStop() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if m.playing {
-		m.stop = true
-	}
+	m.stop = true
 
 	return err
 }
@@ -184,7 +182,7 @@ func (m *MPV) Stop() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if m.playing {
+	if m.playing || m.ready {
 		m.stop = true
 		m.writer.WriteByte('q')
 		m.writer.Flush()
