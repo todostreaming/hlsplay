@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"os/exec"
 )
 
 // remux -i /var/segments/fifo -c copy -f mpegts /var/segments/fifo2 -y
@@ -166,15 +167,21 @@ func (r *Remux) Stop() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if r.remuxing {
+	if r.started {
 		r.stop = true
-		r.writer.WriteByte('q')
-		r.writer.Flush()
+		killall("remux")
 	} else {
 		return fmt.Errorf("remux: NOT_STOP_AVAIL")
 	}
 
 	return err
+}
+
+func killall(list string){
+	prog := strings.Fields(list)
+	for _,v := range prog {
+		exec.Command("/bin/sh","-c","kill -9 `ps -A|awk '/"+v+"/{print $1}'`").Run()
+	}
 }
 
 // call this func after Stop() before to re-Start()
