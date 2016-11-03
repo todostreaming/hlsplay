@@ -170,6 +170,9 @@ func (r *Remux) Stop() error {
 	if r.started {
 		r.stop = true
 		killall("remux")
+		killall("remux")
+		killall("remux")
+		killall("remux")
 	} else {
 		return fmt.Errorf("remux: NOT_STOP_AVAIL")
 	}
@@ -180,7 +183,7 @@ func (r *Remux) Stop() error {
 func killall(list string){
 	prog := strings.Fields(list)
 	for _,v := range prog {
-		exec.Command("/bin/sh","-c","kill -9 `ps -A|awk '/"+v+"/{print $1}'`").Run()
+		exec.Command("/bin/sh","-c","kill -2 `ps -A|awk '/"+v+"/{print $1}'`").Run()
 	}
 }
 
