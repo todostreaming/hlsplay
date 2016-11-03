@@ -28,7 +28,6 @@ type Remux struct {
 	lastime  int64         // last UNIX time a frame was remuxed
 	log      string        // logging from remuxer
 	mu       sync.Mutex    // mutex tu protect the internal variables on multithreads
-	writer   *bufio.Writer // write to the cmdline stdin
 	// external config variables
 	input  string // input to remux (/var/segments/fifo)
 	output string // output remuxed	(/var/segments/fifo2)
@@ -84,11 +83,6 @@ func (r *Remux) run() error {
 			return err
 		}
 		mediareader := bufio.NewReader(stderrRead)
-		stdinWrite, err := exe.StdinPipe()
-		if err != nil {
-			return err
-		}
-		r.writer = bufio.NewWriter(stdinWrite)
 		if err = exe.Start(); err != nil {
 			return err
 		}

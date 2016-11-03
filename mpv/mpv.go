@@ -30,7 +30,6 @@ type MPV struct {
 	avsync  float64       // DTS difference between Audio and Video packets
 	log     string        // log output
 	mu      sync.Mutex    // mutex tu protect the internal variables on multithreads
-	writer  *bufio.Writer // write to the cmdline stdin
 	lastime int64         // last UNIX time a frame was played
 	hwissue bool          // Hw issue (no DISPMANX)
 	// external config variables
@@ -102,11 +101,6 @@ func (m *MPV) run() error {
 			return err
 		}
 		mediareader := bufio.NewReader(stderrRead)
-		stdinWrite, err := exe.StdinPipe()
-		if err != nil {
-			return err
-		}
-		m.writer = bufio.NewWriter(stdinWrite)
 		if err = exe.Start(); err != nil {
 			return err
 		}
@@ -194,8 +188,6 @@ func (m *MPV) Stop() error {
 
 	if m.playing || m.ready {
 		m.stop = true
-//		m.writer.WriteByte('q')
-//		m.writer.Flush()
 		killall("mpv")
 	} else {
 		return fmt.Errorf("remux: NOT_STOP_AVAIL")

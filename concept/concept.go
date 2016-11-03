@@ -62,15 +62,6 @@ func main() {
 			hls.WaitforPaused() // blocks until completely paused
 			fmt.Println("Stopping player")
 			player.Stop()
-			fmt.Printf("Playing = %t Ready = %t Started = %t Time = %d secs\n", player.Status().Playing, player.Status().Ready, player.Status().Started, time.Now().Unix()-player.Status().Lastime)
-			time.Sleep(1 * time.Second)
-			fmt.Printf("Playing = %t Ready = %t Started = %t Time = %d secs\n", player.Status().Playing, player.Status().Ready, player.Status().Started, time.Now().Unix()-player.Status().Lastime)
-			time.Sleep(1 * time.Second)
-			fmt.Printf("Playing = %t Ready = %t Started = %t Time = %d secs\n", player.Status().Playing, player.Status().Ready, player.Status().Started, time.Now().Unix()-player.Status().Lastime)
-			time.Sleep(1 * time.Second)
-			fmt.Printf("Playing = %t Ready = %t Started = %t Time = %d secs\n", player.Status().Playing, player.Status().Ready, player.Status().Started, time.Now().Unix()-player.Status().Lastime)
-			time.Sleep(1 * time.Second)
-			
 			player.WaitforStopped() // blocks until stopped
 			fmt.Println("Stopping remuxer")
 			rmx.Stop()
