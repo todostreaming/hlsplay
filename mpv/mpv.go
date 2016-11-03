@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"os/exec"
 )
 
 // mpv --vo=rpi:background=yes --ao=alsa:device=[hw:0,0] --video-aspect 16:9 --loop=inf --vd-lavc-software-fallback=no  /var/segments/fifo2
@@ -193,13 +194,21 @@ func (m *MPV) Stop() error {
 
 	if m.playing || m.ready {
 		m.stop = true
-		m.writer.WriteByte('q')
-		m.writer.Flush()
+//		m.writer.WriteByte('q')
+//		m.writer.Flush()
+		killall("mpv")
 	} else {
 		return fmt.Errorf("remux: NOT_STOP_AVAIL")
 	}
 
 	return err
+}
+
+func killall(list string){
+	prog := strings.Fields(list)
+	for _,v := range prog {
+		exec.Command("/bin/sh","-c","kill -2 `ps -A|awk '/"+v+"/{print $1}'`").Run()
+	}
 }
 
 // call this func after Stop() before to re-Start()

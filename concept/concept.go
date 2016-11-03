@@ -60,11 +60,20 @@ func main() {
 			hls.Pause()
 			fmt.Println("Pausing Download...")
 			hls.WaitforPaused() // blocks until completely paused
-			fmt.Println("Stop player and Remuxer")
+			fmt.Println("Stopping player")
 			player.Stop()
-			rmx.Stop()
-			fmt.Println("Waiting Stop player and Remuxer...")
+			fmt.Printf("Playing = %t Ready = %t Started = %t Time = %d secs\n", player.Status().Playing, player.Status().Ready, player.Status().Started, time.Now().Unix()-player.Status().Lastime)
+			time.Sleep(1 * time.Second)
+			fmt.Printf("Playing = %t Ready = %t Started = %t Time = %d secs\n", player.Status().Playing, player.Status().Ready, player.Status().Started, time.Now().Unix()-player.Status().Lastime)
+			time.Sleep(1 * time.Second)
+			fmt.Printf("Playing = %t Ready = %t Started = %t Time = %d secs\n", player.Status().Playing, player.Status().Ready, player.Status().Started, time.Now().Unix()-player.Status().Lastime)
+			time.Sleep(1 * time.Second)
+			fmt.Printf("Playing = %t Ready = %t Started = %t Time = %d secs\n", player.Status().Playing, player.Status().Ready, player.Status().Started, time.Now().Unix()-player.Status().Lastime)
+			time.Sleep(1 * time.Second)
+			
 			player.WaitforStopped() // blocks until stopped
+			fmt.Println("Stopping remuxer")
+			rmx.Stop()
 			rmx.WaitforStopped()
 			fmt.Printf("FIFO Empty [%d] Goroutines = %d!!!\n", count, runtime.NumGoroutine())
 
