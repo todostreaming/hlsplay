@@ -19,7 +19,7 @@ func init() {
 
 // mpv --vo=opengl --rpi-layer=0 --rpi-background=yes --audio-device=alsa/plughw:0,0 --video-aspect 16:9 --vd-lavc-software-fallback=no --deinterlace=yes /var/segments/fifo2
 func main() {
-	hls := hlsdownload.HLSDownloader("http://pablo001.todostreaming.es/radiovida/mobile/playlist.m3u8", "/var/segments/")
+	hls := hlsdownload.HLSDownloader("http://edge3.adnstream.com:81/hls/intereconomia.m3u8", "/var/segments/")
 	player := mpv.MPVPlayer("/var/segments/fifo2", "--vo=opengl --rpi-layer=0 --rpi-background=yes --audio-device=alsa/plughw:0,0 --video-aspect 16:9 --vd-lavc-software-fallback=no")
 	rmx := remux.Remuxer("/var/segments/fifo", "/var/segments/fifo2")
 
